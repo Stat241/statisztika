@@ -113,9 +113,6 @@ if st.sidebar.button("💾 Beállítások Mentése"):
     save_data(db)
     st.sidebar.success("Beállítások elmentve!")
 
-# ================= FEJLÉC =================
-today_str = datetime.now().strftime("%Y.%m.%d.")
-
 col_left, col_right = st.columns([1, 2])
 
 # BAL OLDAL: Adatbevitel és Táblázat
@@ -151,6 +148,14 @@ with col_right:
     if selected_stat in db["data"] and db["data"][selected_stat]:
         raw_items = sorted(db["data"][selected_stat], key=lambda x: x[0])
         
+        # Kezdő és záró dátum kiszámítása az adatokból
+        if len(raw_items) > 0:
+            start_d = datetime.strptime(raw_items[0][0], "%Y-%m-%d").strftime("%Y.%m.%d.")
+            end_d = datetime.strptime(raw_items[-1][0], "%Y-%m-%d").strftime("%Y.%m.%d.")
+            date_range_str = f"({start_d} - {end_d})"
+        else:
+            date_range_str = ""
+
         fig = go.Figure()
 
         for i in range(len(raw_items) - 1):
@@ -170,8 +175,9 @@ with col_right:
 
         layout_args = dict(
             title=dict(
-                text=f"<b>{selected_stat}</b><br><span style='font-size: 16px; color: #64748B;'>Dátum: {today_str}</span>",
+                text=f"<b>{selected_stat}</b><br><span style='font-size: 16px; color: #64748B;'>Dátum: {date_range_str}</span>",
                 x=0.5,
+                xref="paper",
                 xanchor='center',
                 yanchor='top',
                 font=dict(size=26, color="#1E293B")
