@@ -72,7 +72,7 @@ def load_data():
                 ["2026-08-15", 800000],
                 ["2026-08-25", 1200000],
                 ["2026-08-30", 1600000],
-                ["2026-09-13", 2120000],  # A korrigált pont / fúrási pont
+                ["2026-09-13", 2120000],  # <-- Itt van a grafikonra szánt korrigált pont (2 120 000 Ft)
                 ["2026-09-20", 2120000],
                 ["2026-09-21", 2120000]
             ]
@@ -128,7 +128,6 @@ with col_max:
 with col_step:
     ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
 
-# Egyedi referencia vonal beviteli mezője
 ref_line_val = st.sidebar.text_input(
     "Referencia vonal értéke (Ft):", 
     value=stat_settings.get("ref_line", ""),
@@ -183,7 +182,6 @@ with col_right:
     if selected_stat in db["data"] and db["data"][selected_stat]:
         raw_items = sorted(db["data"][selected_stat], key=lambda x: str(x[0]))
         
-        # Kezdő és záró dátum kiszámítása
         date_range_str = ""
         if len(raw_items) > 0:
             try:
@@ -195,12 +193,11 @@ with col_right:
 
         fig = go.Figure()
 
-        # Dátumok átalakítása numerikus értékekké (napok száma az első dátumhoz képest)
         x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
         x_numeric = [(d - x_dates[0]).days for d in x_dates]
         y_vals = [item[1] for item in raw_items]
 
-        # Összekötő vonalak (6 px)
+        # Összekötő vonalak a grafikonon
         for i in range(len(raw_items) - 1):
             x1, y1 = x_numeric[i], y_vals[i]
             x2, y2 = x_numeric[i+1], y_vals[i+1]
@@ -216,7 +213,6 @@ with col_right:
                 hoverinfo='skip'
             ))
 
-        # Referencia vonal meghatározása (Kézi beállítás VAGY utolsó adat)
         line_target_val = None
         if ref_line_val:
             try:
@@ -226,7 +222,6 @@ with col_right:
         else:
             line_target_val = y_vals[-1]
 
-        # Vízszintes egybefüggő referencia vonal kirajzolása
         if line_target_val is not None:
             formatted_ref_text = f" {int(line_target_val):,} Ft".replace(",", " ")
             fig.add_hline(
@@ -239,7 +234,6 @@ with col_right:
                 annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
             )
 
-        # KISEBB FEKETE PONT A CÍM ÉS A DÁTUM ALATT, KÖZÉPEN
         calc_ymin = float(ymin) if ymin else min(y_vals) * 0.9
         calc_ymax = float(ymax) if ymax else max(max(y_vals), line_target_val if line_target_val else 0) * 1.15
         
@@ -255,10 +249,8 @@ with col_right:
             hoverinfo='skip'
         ))
 
-        # Adatpontok és értékek
         text_vals = [f"{int(val):,} Ft".replace(",", " ") for val in y_vals]
 
-        # Magyar hónap nevek a tengely felirataihoz
         hu_months = {
             1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
             5: "máj.", 6: "jún.", 7: "júl.", 8: "aug.",
