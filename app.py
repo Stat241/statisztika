@@ -70,13 +70,17 @@ def load_data():
             "Bruttó Beérkezett Bevétel": {
                 "unit": "Ft",
                 "data": [
-                    ["2026-08-08", 500000],
-                    ["2026-08-15", 800000],
-                    ["2026-08-25", 1200000],
-                    ["2026-08-30", 1600000],
-                    ["2026-09-13", 2120000],
-                    ["2026-09-20", 2120000],
-                    ["2026-09-21", 2120000]
+                    ["2026-07-23", 650000],
+                    ["2026-07-30", 97500],
+                    ["2026-08-06", 97500],
+                    ["2026-08-13", 547500],
+                    ["2026-08-20", 347500],
+                    ["2026-08-27", 1570799],
+                    ["2026-09-03", 2350000],
+                    ["2026-09-10", 390000],
+                    ["2026-09-17", 4722200],
+                    ["2026-09-24", 0],
+                    ["2026-10-01", 945000]
                 ]
             },
             "Ügyfelek száma": {
@@ -281,7 +285,7 @@ with col_right:
         x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
         x_formatted = [f"{d.year}. {hu_months[d.month]} {d.day}." for d in x_dates]
 
-        # Dinamikus szövegpozíció: a legelső pontnál jobbra/közép-jobbra tesszük, hogy ne lógjon ki a bal szélen
+        # Minden pont megkapja a saját pozícióját (az első pont jobbra igazítva, a többi felül)
         text_positions = ["middle right"] + ["top center"] * (len(x_numeric) - 1)
 
         fig.add_trace(go.Scatter(
@@ -306,7 +310,7 @@ with col_right:
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
-            # A bal margót megnöveltük, hogy az első feliratnak legyen elég helye
+            # Elegendő bal margó a legelső érték szövegének
             margin=dict(t=150, b=80, l=130, r=80),
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
@@ -320,7 +324,7 @@ with col_right:
                 showline=True,
                 linecolor="#000000",
                 linewidth=3,
-                range=[-0.2, len(x_numeric) - 0.7]  # A bal szélnél hagyunk pici teret, a végén pedig marad a kért eltolás
+                range=[0, len(x_numeric) - 0.7]  # Pontosan a bal tengelyhez (0-hoz) igazítja a legelső pontot
             ),
             yaxis=dict(
                 title=dict(text=f"<b>Érték ({current_unit})</b>", font=dict(color="#000000", size=26)),
