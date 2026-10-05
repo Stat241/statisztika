@@ -7,7 +7,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
-# ================= NYOMTATÁSI CSS =================
+# ================= NYOMTATÁSI CSS (Élesítés és felesleges elemek elrejtése) =================
 st.markdown("""
     <style>
     @media print {
@@ -180,10 +180,11 @@ with col_right:
 
         fig = go.Figure()
 
-        # Vonalak megrajzolása a pontok között (zöld/piros)
+        # Zöld / Piros összekötő vonalak
         for i in range(len(raw_items) - 1):
             x1, y1 = raw_items[i][0], raw_items[i][1]
             x2, y2 = raw_items[i+1][0], raw_items[i+1][1]
+            
             color = "#116B3A" if y2 >= y1 else "#991B1B"
             
             fig.add_trace(go.Scatter(
@@ -198,7 +199,6 @@ with col_right:
         # Adatpontok és az értékek kiírása a pontok felé
         x_vals = [item[0] for item in raw_items]
         y_vals = [item[1] for item in raw_items]
-        # Értékek megformázása ezres elválasztóval (pl. 1 200 000 Ft)
         text_vals = [f"{int(val):,} Ft".replace(",", " ") for val in y_vals]
 
         fig.add_trace(go.Scatter(
@@ -208,24 +208,44 @@ with col_right:
             marker=dict(size=9, color="#1E293B"),
             text=text_vals,
             textposition="top center",
-            textfont=dict(size=12, color="#1E293B", family="Arial Black"),
+            textfont=dict(size=12, color="#000000", family="Arial Black"),
             showlegend=False
         ))
 
         layout_args = dict(
             title=dict(
-                text=f"<b>{selected_stat}</b><br><span style='font-size: 16px; color: #64748B;'>Dátum: {date_range_str}</span>",
+                text=f"<b>{selected_stat}</b><br><span style='font-size: 16px; color: #1E293B;'>Dátum: {date_range_str}</span>",
                 x=0.5,
                 xref="paper",
                 xanchor='center',
                 yanchor='top',
-                font=dict(size=26, color="#1E293B")
+                font=dict(size=26, color="#000000")
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(t=90, b=40, l=40, r=40),
-            xaxis=dict(title="Dátum", showgrid=True, gridcolor="#E2E8F0"),
-            yaxis=dict(title="Érték (Ft)", showgrid=True, gridcolor="#E2E8F0")
+            margin=dict(t=90, b=40, l=50, r=40),
+            # X tengely (Dátumok)
+            xaxis=dict(
+                title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=14)),
+                showgrid=True,
+                gridcolor="#94A3B8",
+                gridwidth=1.5,
+                tickfont=dict(color="#000000", size=12, family="Arial Black"),
+                showline=True,
+                linecolor="#000000",
+                linewidth=2
+            ),
+            # Y tengely (Értékek)
+            yaxis=dict(
+                title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=14)),
+                showgrid=True,
+                gridcolor="#94A3B8",
+                gridwidth=1.5,
+                tickfont=dict(color="#000000", size=12, family="Arial Black"),
+                showline=True,
+                linecolor="#000000",
+                linewidth=2
+            )
         )
 
         try:
