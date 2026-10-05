@@ -128,8 +128,29 @@ if not stat_names:
     db["stats"]["Bruttó Beérkezett Bevétel"] = {"unit": "Ft", "data": []}
     stat_names = list(db["stats"].keys())
 
-# Válassz statisztikát legördülő
-selected_stat = st.sidebar.selectbox("Válassz Statisztikát:", stat_names)
+# --- Lenyíló rész a régi / archív statisztikák kiválasztásához ---
+with st.sidebar.expander("📂 Régi / Archív statisztikák kiválasztása"):
+    archived_stat = st.selectbox(
+        "Válassz a korábbi nevek közül:", 
+        options=stat_names, 
+        key="archived_selectbox"
+    )
+    if st.button("Kiválasztott archív betöltése"):
+        # Beállítjuk az aktuális kiválasztást a session_state-be, ha szükséges
+        st.session_state["selected_stat_override"] = archived_stat
+
+# Alapértelmezett vagy felülírt kiválasztott statisztika kezelése
+default_stat = stat_names[0]
+if "selected_stat_override" in st.session_state and st.session_state["selected_stat_override"] in stat_names:
+    default_stat_idx = stat_names.index(st.session_state["selected_stat_override"])
+else:
+    default_stat_idx = 0
+
+# Fő legördülő szűrő a nevek között
+selected_stat = st.sidebar.selectbox("Aktív Statisztika Szűrése / Kiválasztása:", stat_names, index=default_stat_idx)
+
+# Frissítjük a felülírást, ha a fő selectbox-ból változtatnak
+st.session_state["selected_stat_override"] = selected_stat
 
 # Külön név és mértékegység létrehozása fül
 with st.sidebar.expander("➕ Új statisztika létrehozása"):
