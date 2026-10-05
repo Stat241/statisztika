@@ -72,7 +72,7 @@ def load_data():
                 ["2026-08-15", 800000],
                 ["2026-08-25", 1200000],
                 ["2026-08-30", 1600000],
-                ["2026-09-13", 2120000],  # <-- Itt van a grafikonra szánt korrigált pont (2 120 000 Ft)
+                ["2026-09-13", 2120000],  # A grafikonra szánt korrigált pont
                 ["2026-09-20", 2120000],
                 ["2026-09-21", 2120000]
             ]
@@ -234,17 +234,14 @@ with col_right:
                 annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
             )
 
-        calc_ymin = float(ymin) if ymin else min(y_vals) * 0.9
-        calc_ymax = float(ymax) if ymax else max(max(y_vals), line_target_val if line_target_val else 0) * 1.15
-        
-        center_x = (min(x_numeric) + max(x_numeric)) / 2.0 if x_numeric else 0
-        center_y = calc_ymax * 0.965
-
+        # ================= KIS FEKETE PONT A LAP LEGES LEGTETEJÉN, KÖZÉPEN =================
         fig.add_trace(go.Scatter(
-            x=[center_x],
-            y=[center_y],
+            xref="paper",
+            yref="paper",
+            x=[0.5],
+            y=[1.06],  # A leges legfelső margó részre pozícionálva
             mode='markers',
-            marker=dict(size=8, color="#000000"),
+            marker=dict(size=10, color="#000000"),
             showlegend=False,
             hoverinfo='skip'
         ))
@@ -280,7 +277,7 @@ with col_right:
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(t=140, b=80, l=90, r=60),
+            margin=dict(t=150, b=80, l=90, r=60),
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
                 tickmode="array",
