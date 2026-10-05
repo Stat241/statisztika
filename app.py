@@ -75,6 +75,13 @@ def load_data():
                 ["2026-09-13", 2120000],
                 ["2026-09-20", 2120000],
                 ["2026-09-21", 2120000]
+            ],
+            "Ügyfelek száma (fő)": [
+                ["2026-08-08", 5],
+                ["2026-08-15", 12],
+                ["2026-08-25", 18],
+                ["2026-08-30", 25],
+                ["2026-09-13", 34]
             ]
         },
         "settings": {}
@@ -103,16 +110,21 @@ if not stat_names:
     db["data"] = {"Bruttó Beérkezett Bevétel (Ft)": []}
     stat_names = list(db["data"].keys())
 
+# Válassz statisztikát legördülő
 selected_stat = st.sidebar.selectbox("Válassz Statisztikát:", stat_names)
 
-with st.sidebar.expander("➕ Új statisztika létrehozása"):
-    new_stat_name = st.text_input("Új statisztika neve:")
-    if st.button("Létrehozás"):
-        if new_stat_name and new_stat_name not in db["data"]:
-            db["data"][new_stat_name] = []
-            save_data(db)
-            st.success(f"Létrehozva: {new_stat_name}")
-            st.rerun()
+# ÚJ STATISZTIKA / MÉRTÉKEGYSÉG LÉTREHOZÁSA FÜL (EXPANDER)
+with st.sidebar.expander("➕ Új statisztika / kategória hozzáadása"):
+    new_name = st.text_input("Név és mértékegység:", placeholder="pl. Ügyfelek száma (fő)")
+    if st.button("Létrehozás és kiválasztás"):
+        if new_name:
+            if new_name not in db["data"]:
+                db["data"][new_name] = []
+                save_data(db)
+                st.success(f"Létrehozva: {new_name}")
+                st.rerun()
+            else:
+                st.warning("Ilyen nevű statisztika már létezik!")
 
 stat_settings = db.get("settings", {}).get(selected_stat, {})
 
@@ -129,7 +141,7 @@ with col_step:
     ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
 
 ref_line_val = st.sidebar.text_input(
-    "Referencia vonal értéke (Ft):", 
+    "Referencia vonal értéke:", 
     value=stat_settings.get("ref_line", ""),
     placeholder="Hagyd üresen az utolsó adathoz"
 )
@@ -151,10 +163,10 @@ col_left, col_right = st.columns([1, 2])
 
 # BAL OLDAL: Adatbevitel és Táblázat
 with col_left:
-    st.subheader("➕ Új adat hozzáadása")
+    st.subheader(f"➕ Új adat hozzáadása ehhez: {selected_stat}")
     with st.form("add_data_form", clear_on_submit=True):
         input_date = st.date_input("Dátum")
-        input_val = st.number_input("Érték (Ft)", min_value=0.0, step=10000.0)
+        input_val = st.number_input("Érték", min_value=0.0, step=1.0)
         submit_btn = st.form_submit_button("Adat Hozzáadása")
 
         if submit_btn:
@@ -166,7 +178,7 @@ with col_left:
 
     st.subheader("📋 Adat-táblázat")
     if selected_stat in db["data"] and db["data"][selected_stat]:
-        df = pd.DataFrame(db["data"][selected_stat], columns=["Dátum", "Mért Érték (Ft)"])
+        df = pd.DataFrame(db["data"][selected_stat], columns=["Dátum", f"Mért Érték"])
         df = df.sort_values(by="Dátum")
         
         st.dataframe(df, use_container_width=True)
@@ -224,7 +236,8 @@ with col_right:
 
         # VÍZSZINTES REFERENCIA VONAL
         if line_target_val is not None:
-            formatted_ref_text = f" {int(line_target_val):,} Ft".replace(",", " ")
+            # Ha egész szám, akkor ne írjon tizedest (pl. ügyfeleknél jobban néz ki)
+            formatted_ref_text = f" {int(line_target_val):,}".replace(",", " ") if line_target_val.is_integer() else f" {line_target_val}"
             fig.add_hline(
                 y=line_target_val,
                 line_dash="solid",
@@ -235,7 +248,7 @@ with col_right:
                 annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
             )
 
-        text_vals = [f"{int(val):,} Ft".replace(",", " ") for val in y_vals]
+        text_vals = [f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}" for val in y_vals]
 
         hu_months = {
             1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
@@ -281,7 +294,7 @@ with col_right:
                 linewidth=3
             ),
             yaxis=dict(
-                title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=26)),
+                title=dict(text="<b>Érték</b>", font=dict(color="#000000", size=26)),
                 showgrid=True,
                 gridcolor="#F1F5F9",
                 gridwidth=2.5,
