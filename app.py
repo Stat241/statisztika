@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import json
 import os
+from datetime import datetime
 
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
@@ -14,7 +15,6 @@ if "authenticated" not in st.session_state:
 
 def check_password():
     st.markdown("<h2 style='text-align: center;'>🔐 Védett Oldal - Bejelentkezés</h2>", unsafe_allow_html=True)
-    
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         with st.form("login_form"):
@@ -113,11 +113,20 @@ if st.sidebar.button("💾 Beállítások Mentése"):
     save_data(db)
     st.sidebar.success("Beállítások elmentve!")
 
-# ================= FŐOLDAL =================
-st.title("📈 Webes Statisztika Dashboard")
+# ================= FEJLÉC (NYOMTATÁSHOZ ÉS MEGJELENÍTÉSHEZ) =================
+today_str = datetime.now().strftime("%Y.%m.%d.")
+
+st.markdown(f"""
+    <div style='border-bottom: 2px solid #116B3A; padding-bottom: 10px; margin-bottom: 20px;'>
+        <h1 style='margin: 0; color: #1E293B;'>📈 STATISZTIKA KIMUTATÁS</h1>
+        <h3 style='margin: 5px 0 0 0; color: #116B3A;'>Megnevezés: {selected_stat}</h3>
+        <p style='margin: 5px 0 0 0; color: #64748B; font-size: 14px;'>Nyomtatás/Lekérés dátuma: <b>{today_str}</b> | Bontás: <b>{period}</b></p>
+    </div>
+""", unsafe_allow_html=True)
 
 col_left, col_right = st.columns([1, 2])
 
+# BAL OLDAL: Adatbevitel és Táblázat
 with col_left:
     st.subheader("➕ Új adat hozzáadása")
     with st.form("add_data_form", clear_on_submit=True):
@@ -132,9 +141,9 @@ with col_left:
             st.success("Adat elmentve!")
             st.rerun()
 
-    st.subheader("📋 Adatok")
+    st.subheader("📋 Adat-táblázat")
     if selected_stat in db["data"] and db["data"][selected_stat]:
-        df = pd.DataFrame(db["data"][selected_stat], columns=["Dátum", "Mért Érték"])
+        df = pd.DataFrame(db["data"][selected_stat], columns=["Dátum", "Mért Érték (Ft)"])
         df = df.sort_values(by="Dátum")
         
         st.dataframe(df, use_container_width=True)
@@ -145,8 +154,9 @@ with col_left:
             save_data(db)
             st.rerun()
 
+# JOBB OLDAL: Interaktív Grafikon
 with col_right:
-    st.subheader(f"📊 {selected_stat.upper()}")
+    st.subheader(f"📊 Grafikon: {selected_stat}")
     
     if selected_stat in db["data"] and db["data"][selected_stat]:
         raw_items = sorted(db["data"][selected_stat], key=lambda x: x[0])
@@ -169,10 +179,11 @@ with col_right:
             ))
 
         layout_args = dict(
+            title=f"{selected_stat} - ({today_str})",
             plot_bgcolor="white",
             paper_bgcolor="white",
             xaxis=dict(title="Dátum", showgrid=True, gridcolor="#E2E8F0"),
-            yaxis=dict(title="Érték", showgrid=True, gridcolor="#E2E8F0")
+            yaxis=dict(title="Érték (Ft)", showgrid=True, gridcolor="#E2E8F0")
         )
 
         try:
