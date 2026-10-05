@@ -226,8 +226,9 @@ with col_right:
 
         fig = go.Figure()
 
-        x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
-        x_numeric = [(d - x_dates[0]).days for d in x_dates]
+        # Az x_numeric értékeket egyenlő távolságúra állítjuk (0, 1, 2, 3...)
+        # Így a legelső pont mindig a 0-nál (teljesen balra) kezdődik, és nem lóg a levegőben.
+        x_numeric = list(range(len(raw_items)))
         y_vals = [item[1] for item in raw_items]
 
         # Összekötő vonalak a grafikonon
@@ -278,6 +279,8 @@ with col_right:
             5: "máj.", 6: "jún.", 7: "júl.", 8: "aug.",
             9: "szept.", 10: "okt.", 11: "nov.", 12: "dec."
         }
+        
+        x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
         x_formatted = [f"{d.year}. {hu_months[d.month]} {d.day}." for d in x_dates]
 
         fig.add_trace(go.Scatter(
@@ -314,7 +317,8 @@ with col_right:
                 tickfont=dict(color="#000000", size=22, family="Arial Black"),
                 showline=True,
                 linecolor="#000000",
-                linewidth=3
+                linewidth=3,
+                range=[-0.5, len(x_numeric) - 0.5] # Biztosítja, hogy a szélekhez igazodjon
             ),
             yaxis=dict(
                 title=dict(text=f"<b>Érték ({current_unit})</b>", font=dict(color="#000000", size=26)),
