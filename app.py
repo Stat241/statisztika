@@ -153,7 +153,7 @@ with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
             if selected_archived_stat in archive_db:
                 db["stats"][selected_archived_stat] = archive_db[selected_archived_stat]
                 save_data(db)
-                st.success(f"'{selected_archived_stat' sikeresen visszatöltve!")
+                st.success(f"'{selected_archived_stat}' sikeresen visszatöltve!")
                 st.rerun()
     else:
         st.info("Még nincsenek archivált elemek.")
@@ -277,7 +277,6 @@ with col_left:
 
         delete_idx = st.number_input("Törlendő sor száma (index):", min_value=0, max_value=len(df)-1 if len(df) > 0 else 0, step=1)
         if st.button("🔴 Sor Törlése") and len(df) > 0:
-            # Eredeti listából töröljük az index alapján
             target_to_delete = df.iloc[int(delete_idx)].tolist()
             if target_to_delete in db["stats"][selected_stat]["data"]:
                 db["stats"][selected_stat]["data"].remove(target_to_delete)
@@ -288,7 +287,6 @@ with col_left:
 with col_right:
     stat_data_list = db["stats"][selected_stat]["data"]
     if stat_data_list:
-        # Szűrés alkalmazása a grafikonra is
         raw_items = []
         for item in stat_data_list:
             item_date = datetime.strptime(item[0], "%Y-%m-%d").date()
@@ -315,7 +313,6 @@ with col_right:
             x_numeric = list(range(len(raw_items)))
             y_vals = [item[1] for item in raw_items]
 
-            # Összekötő vonalak
             for i in range(len(raw_items) - 1):
                 x1, y1 = x_numeric[i], y_vals[i]
                 x2, y2 = x_numeric[i+1], y_vals[i+1]
