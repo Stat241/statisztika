@@ -189,11 +189,12 @@ with col_right:
 
         fig = go.Figure()
 
-        # Összekötő vonalak
+        # Összekötő vonalak (Csak akkor ZÖLD, ha szigorúan növekszik az érték, egyébként PIROS)
         for i in range(len(raw_items) - 1):
             x1, y1 = raw_items[i][0], raw_items[i][1]
             x2, y2 = raw_items[i+1][0], raw_items[i+1][1]
-            color = "#116B3A" if y2 >= y1 else "#991B1B"
+            
+            color = "#116B3A" if y2 > y1 else "#991B1B"
             
             fig.add_trace(go.Scatter(
                 x=[x1, x2],
@@ -246,7 +247,7 @@ with col_right:
             plot_bgcolor="white",
             paper_bgcolor="white",
             margin=dict(t=100, b=60, l=70, r=40),
-            # X tengely - Világosabb (#F1F5F9) és vastagabb (2.5 px) rácsvonalak
+            # X tengely - Halványabb, vastagabb rácsvonalak
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=18)),
                 tickmode="array",
@@ -260,7 +261,7 @@ with col_right:
                 linecolor="#000000",
                 linewidth=2
             ),
-            # Y tengely - Világosabb (#F1F5F9) és vastagabb (2.5 px) rácsvonalak
+            # Y tengely - Halványabb, vastagabb rácsvonalak
             yaxis=dict(
                 title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=18)),
                 showgrid=True,
