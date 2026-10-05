@@ -223,14 +223,14 @@ with col_right:
         else:
             line_target_val = raw_items[-1][1]
 
-        # Vízszintes egybefüggő referencia vonal kirajzolása érték-felirattal
+        # Vízszintes egybefüggő referencia vonal kirajzolása (Vastagság: 4 px)
         if line_target_val is not None:
             formatted_ref_text = f" {int(line_target_val):,} Ft".replace(",", " ")
             fig.add_hline(
                 y=line_target_val,
                 line_dash="solid",      # Egybefüggő, folytonos vonal
                 line_color="#DC2626",     # Világosabb piros
-                line_width=2,
+                line_width=4,            # Vastagabb vonal (4px)
                 annotation_text=formatted_ref_text,
                 annotation_position="bottom right",
                 annotation_font=dict(size=14, color="#DC2626", family="Arial Black")
