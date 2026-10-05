@@ -197,7 +197,7 @@ with col_right:
 
         fig = go.Figure()
 
-        # Összekötő vonalak (Még vastagabb: 6 px)
+        # Összekötő vonalak (6 px)
         for i in range(len(raw_items) - 1):
             x1, y1 = raw_items[i][0], raw_items[i][1]
             x2, y2 = raw_items[i+1][0], raw_items[i+1][1]
@@ -233,12 +233,34 @@ with col_right:
                 line_width=6,              # Nagyon vastag vonal (6px)
                 annotation_text=formatted_ref_text,
                 annotation_position="bottom right",
-                annotation_font=dict(size=21, color="#DC2626", family="Arial Black") # Extra nagy felirat
+                annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
             )
 
-        # Adatpontok és értékek
+        # ================= KÖZPÉNTI / FÚRÁSI PONT KISZÁMÍTÁSA =================
         x_vals = [item[0] for item in raw_items]
         y_vals = [item[1] for item in raw_items]
+        
+        # A diagram Y tengelyének határai (figyelembe véve a manuális Y min/max beállításokat is, ha vannak)
+        calc_ymin = float(ymin) if ymin else min(y_vals) * 0.9
+        calc_ymax = float(ymax) if ymax else max(max(y_vals), line_target_val if line_target_val else 0) * 1.15
+        center_y = (calc_ymin + calc_ymax) / 2.0
+        center_x_idx = len(x_vals) // 2
+        center_x = x_vals[center_x_idx]
+
+        # Középső jelölőpont (fúrási segédpont) kirajzolása
+        fig.add_trace(go.Scatter(
+            x=[center_x],
+            y=[center_y],
+            mode='markers+text',
+            marker=dict(size=14, color="#64748B", symbol="cross"), # Kereszt szimbólum a pontossághoz
+            text=["⌖ Közép / Fúrási pont"],
+            textposition="bottom center",
+            textfont=dict(size=16, color="#475569", family="Arial Black"),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+
+        # Adatpontok és értékek
         text_vals = [f"{int(val):,} Ft".replace(",", " ") for val in y_vals]
 
         # Magyar dátumok
@@ -259,10 +281,10 @@ with col_right:
             x=x_vals,
             y=y_vals,
             mode='markers+text',
-            marker=dict(size=15, color="#1E293B"), # Pontok mérete kicsit nagyobb (15px)
+            marker=dict(size=15, color="#1E293B"),
             text=text_vals,
             textposition="top center",
-            textfont=dict(size=19, color="#000000", family="Arial Black"), # Pontok feletti értékek mérete (19px)
+            textfont=dict(size=19, color="#000000", family="Arial Black"),
             showlegend=False
         ))
 
@@ -273,30 +295,30 @@ with col_right:
                 xref="paper",
                 xanchor='center',
                 yanchor='top',
-                font=dict(size=42, color="#000000") # Főcím mérete (42px)
+                font=dict(size=42, color="#000000")
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
             margin=dict(t=140, b=80, l=90, r=60),
             xaxis=dict(
-                title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)), # Tengely cím mérete (26px)
+                title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
                 tickmode="array",
                 tickvals=x_vals,
                 ticktext=x_formatted,
                 showgrid=True,
                 gridcolor="#F1F5F9",
                 gridwidth=2.5,
-                tickfont=dict(color="#000000", size=22, family="Arial Black"), # Tengely értékek mérete (22px)
+                tickfont=dict(color="#000000", size=22, family="Arial Black"),
                 showline=True,
                 linecolor="#000000",
                 linewidth=3
             ),
             yaxis=dict(
-                title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=26)), # Tengely cím mérete (26px)
+                title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=26)),
                 showgrid=True,
                 gridcolor="#F1F5F9",
                 gridwidth=2.5,
-                tickfont=dict(color="#000000", size=24, family="Arial Black"), # Tengely értékek mérete (24px)
+                tickfont=dict(color="#000000", size=24, family="Arial Black"),
                 showline=True,
                 linecolor="#000000",
                 linewidth=3
