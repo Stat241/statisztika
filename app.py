@@ -226,7 +226,6 @@ with col_right:
 
         fig = go.Figure()
 
-        # Indexek alapú elosztás (0, 1, 2, ...)
         x_numeric = list(range(len(raw_items)))
         y_vals = [item[1] for item in raw_items]
 
@@ -282,13 +281,16 @@ with col_right:
         x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
         x_formatted = [f"{d.year}. {hu_months[d.month]} {d.day}." for d in x_dates]
 
+        # Dinamikus szövegpozíció: a legelső pontnál jobbra/közép-jobbra tesszük, hogy ne lógjon ki a bal szélen
+        text_positions = ["middle right"] + ["top center"] * (len(x_numeric) - 1)
+
         fig.add_trace(go.Scatter(
             x=x_numeric,
             y=y_vals,
             mode='markers+text',
             marker=dict(size=15, color="#1E293B"),
             text=text_vals,
-            textposition="top center",
+            textposition=text_positions,
             textfont=dict(size=19, color="#000000", family="Arial Black"),
             showlegend=False
         ))
@@ -304,7 +306,8 @@ with col_right:
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(t=150, b=80, l=90, r=60),
+            # A bal margót megnöveltük, hogy az első feliratnak legyen elég helye
+            margin=dict(t=150, b=80, l=130, r=80),
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
                 tickmode="array",
@@ -317,7 +320,7 @@ with col_right:
                 showline=True,
                 linecolor="#000000",
                 linewidth=3,
-                range=[0, len(x_numeric) - 1]  # Pontosan a bal és jobb szélekhez igazítja az első és utolsó pontot
+                range=[-0.2, len(x_numeric) - 0.7]  # A bal szélnél hagyunk pici teret, a végén pedig marad a kért eltolás
             ),
             yaxis=dict(
                 title=dict(text=f"<b>Érték ({current_unit})</b>", font=dict(color="#000000", size=26)),
