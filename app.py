@@ -223,14 +223,17 @@ with col_right:
         else:
             line_target_val = raw_items[-1][1]
 
-        # Vízszintes referencia vonal kirajzolása (világosabb piros: #DC2626)
+        # Vízszintes egybefüggő referencia vonal kirajzolása érték-felirattal
         if line_target_val is not None:
+            formatted_ref_text = f" {int(line_target_val):,} Ft".replace(",", " ")
             fig.add_hline(
                 y=line_target_val,
-                line_dash="dash",
-                line_color="#DC2626",
+                line_dash="solid",      # Egybefüggő, folytonos vonal
+                line_color="#DC2626",     # Világosabb piros
                 line_width=2,
-                opacity=0.8
+                annotation_text=formatted_ref_text,
+                annotation_position="bottom right",
+                annotation_font=dict(size=14, color="#DC2626", family="Arial Black")
             )
 
         # Adatpontok és értékek
