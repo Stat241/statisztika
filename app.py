@@ -226,8 +226,7 @@ with col_right:
 
         fig = go.Figure()
 
-        # Az x_numeric értékeket egyenlő távolságúra állítjuk (0, 1, 2, 3...)
-        # Így a legelső pont mindig a 0-nál (teljesen balra) kezdődik, és nem lóg a levegőben.
+        # Indexek alapú elosztás (0, 1, 2, ...)
         x_numeric = list(range(len(raw_items)))
         y_vals = [item[1] for item in raw_items]
 
@@ -318,7 +317,7 @@ with col_right:
                 showline=True,
                 linecolor="#000000",
                 linewidth=3,
-                range=[-0.5, len(x_numeric) - 0.5] # Biztosítja, hogy a szélekhez igazodjon
+                range=[0, len(x_numeric) - 1]  # Pontosan a bal és jobb szélekhez igazítja az első és utolsó pontot
             ),
             yaxis=dict(
                 title=dict(text=f"<b>Érték ({current_unit})</b>", font=dict(color="#000000", size=26)),
