@@ -73,7 +73,6 @@ def check_login():
             submit_button = st.form_submit_button("Belépés")
             
             if submit_button:
-                # Frissítjük a users szótárat a fájlból belépéskor is
                 current_users_db = load_users()
                 if username in current_users_db and current_users_db[username]["password"] == password:
                     st.session_state.authenticated = True
@@ -191,14 +190,15 @@ if st.sidebar.button("🚪 Kijelentkezés"):
 
 st.sidebar.markdown("---")
 
-# --- ADMIN FELÜLET: Felhasználók kezelése a weboldalon (Csak adminnak látszik) ---
+# --- ADMIN FELÜLET: Felhasználók létrehozása, MÓDOSÍTÁSA és törlése (Csak adminnak látszik) ---
 if "*" in allowed_stat_names:
     with st.sidebar.expander("👥 Felhasználók & Jogosultságok"):
-        st.write("### Új felhasználó felvétele")
+        
+        # 1. ÚJ FELHASZNÁLÓ
+        st.write("### ➕ Új felhasználó felvétele")
         new_u_name = st.text_input("Új felhasználónév:", key="new_u_name")
         new_u_pass = st.text_input("Jelszó:", type="password", key="new_u_pass")
         
-        # Kiválaszthatja, hogy melyik statisztikákat láthatja
         available_stats_for_assign = list(db["stats"].keys())
         is_admin_check = st.checkbox("Teljes admin jog (*)", key="new_u_is_admin")
         
@@ -220,10 +220,43 @@ if "*" in allowed_stat_names:
             else:
                 st.warning("Add meg a nevet és a jelszót!")
 
-        st.write("### Meglévő felhasználók törlése")
+        st.markdown("---")
+
+        # 2. MEGLÉVŐ FELHASZNÁLÓ MÓDOSÍTÁSA
+        st.write("### ✏️ Felhasználó módosítása")
+        edit_user_name = st.selectbox("Válassz szerkesztendő felhasználót:", options=list(USERS.keys()), key="edit_u_select")
+        
+        if edit_user_name:
+            current_u_data = USERS[edit_user_name]
+            is_currently_admin = "*" in current_u_data["allowed_stats"]
+            
+            edit_is_admin = st.checkbox("Teljes admin jog (*)", value=is_currently_admin, key="edit_u_is_admin")
+            
+            default_selected_stats = [] if is_currently_admin else [s for s in current_u_data["allowed_stats"] if s in available_stats_for_assign]
+            edit_assigned_stats = st.multiselect("Elérhető statisztikák:", options=available_stats_for_assign, default=default_selected_stats, key="edit_u_multiselect")
+            
+            edit_new_pass = st.text_input("Új jelszó (ha üresen hagyod, marad a régi):", type="password", key="edit_u_pass")
+
+            if st.button("Módosítások mentése"):
+                if edit_is_admin:
+                    USERS[edit_user_name]["allowed_stats"] = ["*"]
+                else:
+                    USERS[edit_user_name]["allowed_stats"] = edit_assigned_stats
+                
+                if edit_new_pass.strip():
+                    USERS[edit_user_name]["password"] = edit_new_pass
+                    
+                save_users(USERS)
+                st.success(f"'{edit_user_name}' adatai sikeresen frissítve!")
+                st.rerun()
+
+        st.markdown("---")
+
+        # 3. FELHASZNÁLÓ TÖRLÉSE
+        st.write("### 🗑️ Felhasználó törlése")
         users_to_delete = [u for u in USERS.keys() if u != st.session_state.current_user] # Magát ne tudja törölni
         if users_to_delete:
-            selected_user_to_del = st.selectbox("Válassz törlendő felhasználót:", options=users_to_delete)
+            selected_user_to_del = st.selectbox("Válassz törlendő felhasználót:", options=users_to_delete, key="del_u_select")
             if st.button("🔴 Felhasználó Törlése"):
                 if selected_user_to_del in USERS:
                     del USERS[selected_user_to_del]
