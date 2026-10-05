@@ -234,12 +234,16 @@ with col_right:
                 annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
             )
 
-        # ================= KIS FEKETE PONT A LAP LEGES LEGTETEJÉN, KÖZÉPEN =================
+        calc_ymin = float(ymin) if ymin else min(y_vals) * 0.9
+        calc_ymax = float(ymax) if ymax else max(max(y_vals), line_target_val if line_target_val else 0) * 1.15
+        
+        # ================= KIS FEKETE PONT A GRAFIKON TETEJÉN, KÖZÉPEN =================
+        center_x = (min(x_numeric) + max(x_numeric)) / 2.0 if x_numeric else 0
+        center_y = calc_ymax * 1.08
+
         fig.add_trace(go.Scatter(
-            xref="paper",
-            yref="paper",
-            x=[0.5],
-            y=[1.06],  # A leges legfelső margó részre pozícionálva
+            x=[center_x],
+            y=[center_y],
             mode='markers',
             marker=dict(size=10, color="#000000"),
             showlegend=False,
