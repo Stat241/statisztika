@@ -66,23 +66,29 @@ def load_data():
         except Exception:
             pass
     return {
-        "data": {
-            "Bruttó Beérkezett Bevétel (Ft)": [
-                ["2026-08-08", 500000],
-                ["2026-08-15", 800000],
-                ["2026-08-25", 1200000],
-                ["2026-08-30", 1600000],
-                ["2026-09-13", 2120000],
-                ["2026-09-20", 2120000],
-                ["2026-09-21", 2120000]
-            ],
-            "Ügyfelek száma (fő)": [
-                ["2026-08-08", 5],
-                ["2026-08-15", 12],
-                ["2026-08-25", 18],
-                ["2026-08-30", 25],
-                ["2026-09-13", 34]
-            ]
+        "stats": {
+            "Bruttó Beérkezett Bevétel": {
+                "unit": "Ft",
+                "data": [
+                    ["2026-08-08", 500000],
+                    ["2026-08-15", 800000],
+                    ["2026-08-25", 1200000],
+                    ["2026-08-30", 1600000],
+                    ["2026-09-13", 2120000],
+                    ["2026-09-20", 2120000],
+                    ["2026-09-21", 2120000]
+                ]
+            },
+            "Ügyfelek száma": {
+                "unit": "fő",
+                "data": [
+                    ["2026-08-08", 5],
+                    ["2026-08-15", 12],
+                    ["2026-08-25", 18],
+                    ["2026-08-30", 25],
+                    ["2026-09-13", 34]
+                ]
+            }
         },
         "settings": {}
     }
@@ -96,6 +102,14 @@ if "db" not in st.session_state:
 
 db = st.session_state.db
 
+# Biztosítsuk a "stats" kulcs meglétét (régi formátum migrációhoz)
+if "stats" not in db:
+    old_data = db.get("data", {})
+    db["stats"] = {}
+    for k, v in old_data.items():
+        db["stats"][k] = {"unit": "Ft", "data": v}
+    save_data(db)
+
 # ================= OLDALSÁV =================
 st.sidebar.header("📊 STATISZTIKA BEÁLLÍTÁSOK")
 
@@ -105,27 +119,29 @@ if st.sidebar.button("🚪 Kijelentkezés"):
 
 st.sidebar.markdown("---")
 
-stat_names = list(db.get("data", {}).keys())
+stat_names = list(db["stats"].keys())
 if not stat_names:
-    db["data"] = {"Bruttó Beérkezett Bevétel (Ft)": []}
-    stat_names = list(db["data"].keys())
+    db["stats"]["Bruttó Beérkezett Bevétel"] = {"unit": "Ft", "data": []}
+    stat_names = list(db["stats"].keys())
 
 # Válassz statisztikát legördülő
 selected_stat = st.sidebar.selectbox("Válassz Statisztikát:", stat_names)
 
-# ÚJ STATISZTIKA / MÉRTÉKEGYSÉG LÉTREHOZÁSA FÜL (EXPANDER)
-with st.sidebar.expander("➕ Új statisztika / kategória hozzáadása"):
-    new_name = st.text_input("Név és mértékegység:", placeholder="pl. Ügyfelek száma (fő)")
-    if st.button("Létrehozás és kiválasztás"):
-        if new_name:
-            if new_name not in db["data"]:
-                db["data"][new_name] = []
+# Külön név és mértékegység létrehozása fül
+with st.sidebar.expander("➕ Új statisztika létrehozása"):
+    new_stat_name = st.text_input("Statisztika neve:", placeholder="pl. Ügyfelek száma")
+    new_stat_unit = st.text_input("Mértékegység / Kategória:", placeholder="pl. fő, db, Ft")
+    if st.button("Létrehozás"):
+        if new_stat_name:
+            if new_stat_name not in db["stats"]:
+                db["stats"][new_stat_name] = {"unit": new_stat_unit, "data": []}
                 save_data(db)
-                st.success(f"Létrehozva: {new_name}")
+                st.success(f"Létrehozva: {new_stat_name} ({new_stat_unit})")
                 st.rerun()
             else:
                 st.warning("Ilyen nevű statisztika már létezik!")
 
+current_unit = db["stats"][selected_stat].get("unit", "")
 stat_settings = db.get("settings", {}).get(selected_stat, {})
 
 period = st.sidebar.radio("Időszak bontás:", ["Napi", "Heti (Cs)", "Havi"], index=1)
@@ -163,36 +179,38 @@ col_left, col_right = st.columns([1, 2])
 
 # BAL OLDAL: Adatbevitel és Táblázat
 with col_left:
-    st.subheader(f"➕ Új adat hozzáadása ehhez: {selected_stat}")
+    st.subheader(f"➕ Új adat hozzáadása ({selected_stat})")
     with st.form("add_data_form", clear_on_submit=True):
         input_date = st.date_input("Dátum")
-        input_val = st.number_input("Érték", min_value=0.0, step=1.0)
+        input_val = st.number_input(f"Érték ({current_unit})", min_value=0.0, step=1.0)
         submit_btn = st.form_submit_button("Adat Hozzáadása")
 
         if submit_btn:
             date_str = input_date.strftime("%Y-%m-%d")
-            db["data"][selected_stat].append([date_str, input_val])
+            db["stats"][selected_stat]["data"].append([date_str, input_val])
             save_data(db)
             st.success("Adat elmentve!")
             st.rerun()
 
     st.subheader("📋 Adat-táblázat")
-    if selected_stat in db["data"] and db["data"][selected_stat]:
-        df = pd.DataFrame(db["data"][selected_stat], columns=["Dátum", f"Mért Érték"])
+    stat_data_list = db["stats"][selected_stat]["data"]
+    if stat_data_list:
+        df = pd.DataFrame(stat_data_list, columns=["Dátum", f"Érték ({current_unit})"])
         df = df.sort_values(by="Dátum")
         
         st.dataframe(df, use_container_width=True)
 
         delete_idx = st.number_input("Törlendő sor száma (index):", min_value=0, max_value=len(df)-1 if len(df) > 0 else 0, step=1)
         if st.button("🔴 Sor Törlése") and len(df) > 0:
-            db["data"][selected_stat].pop(delete_idx)
+            db["stats"][selected_stat]["data"].pop(delete_idx)
             save_data(db)
             st.rerun()
 
 # JOBB OLDAL: Interaktív Grafikon
 with col_right:
-    if selected_stat in db["data"] and db["data"][selected_stat]:
-        raw_items = sorted(db["data"][selected_stat], key=lambda x: str(x[0]))
+    stat_data_list = db["stats"][selected_stat]["data"]
+    if stat_data_list:
+        raw_items = sorted(stat_data_list, key=lambda x: str(x[0]))
         
         date_range_str = ""
         if len(raw_items) > 0:
@@ -236,8 +254,8 @@ with col_right:
 
         # VÍZSZINTES REFERENCIA VONAL
         if line_target_val is not None:
-            # Ha egész szám, akkor ne írjon tizedest (pl. ügyfeleknél jobban néz ki)
-            formatted_ref_text = f" {int(line_target_val):,}".replace(",", " ") if line_target_val.is_integer() else f" {line_target_val}"
+            val_str = f"{int(line_target_val):,}".replace(",", " ") if line_target_val.is_integer() else f"{line_target_val}"
+            formatted_ref_text = f" {val_str} {current_unit}".strip()
             fig.add_hline(
                 y=line_target_val,
                 line_dash="solid",
@@ -249,6 +267,7 @@ with col_right:
             )
 
         text_vals = [f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}" for val in y_vals]
+        text_vals = [f"{v} {current_unit}".strip() for v in text_vals]
 
         hu_months = {
             1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
@@ -294,7 +313,7 @@ with col_right:
                 linewidth=3
             ),
             yaxis=dict(
-                title=dict(text="<b>Érték</b>", font=dict(color="#000000", size=26)),
+                title=dict(text=f"<b>Érték ({current_unit})</b>", font=dict(color="#000000", size=26)),
                 showgrid=True,
                 gridcolor="#F1F5F9",
                 gridwidth=2.5,
