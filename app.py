@@ -29,30 +29,62 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ================= JELSZÓ BEÁLLÍTÁSA =================
-SITE_PASSWORD = "titkosjelszo2026"
+# ================= FELHASZNÁLÓK KEZELÉSE (JSON ALAPÚ) =================
+USERS_FILE = "users.json"
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    # Alapértelmezett admin, ha még nincs fájl
+    default_users = {
+        "admin": {
+            "password": "titkosjelszo2026",
+            "allowed_stats": ["*"]
+        }
+    }
+    save_users(default_users)
+    return default_users
+
+def save_users(users_data):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users_data, f, ensure_ascii=False, indent=2)
+
+if "users" not in st.session_state:
+    st.session_state.users = load_users()
+
+USERS = st.session_state.users
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
 
-def check_password():
-    st.markdown("<h2 style='text-align: center;'>🔐 Védett Oldal - Bejelentkezés</h2>", unsafe_allow_html=True)
+def check_login():
+    st.markdown("<h2 style='text-align: center;'>🔐 Bejelentkezés a Statisztika Rendszerbe</h2>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         with st.form("login_form"):
-            entered_password = st.text_input("Add meg a jelszót az oldal megtekintéséhez:", type="password")
+            username = st.text_input("Felhasználónév:")
+            password = st.text_input("Jelszó:", type="password")
             submit_button = st.form_submit_button("Belépés")
             
             if submit_button:
-                if entered_password == SITE_PASSWORD:
+                # Frissítjük a users szótárat a fájlból belépéskor is
+                current_users_db = load_users()
+                if username in current_users_db and current_users_db[username]["password"] == password:
                     st.session_state.authenticated = True
-                    st.success("Sikeres belépés!")
+                    st.session_state.current_user = username
+                    st.success(f"Sikeres belépés, üdvözlünk {username}!")
                     st.rerun()
                 else:
-                    st.error("❌ Hibás jelszó! Próbáld újra.")
+                    st.error("❌ Hibás felhasználónév vagy jelszó!")
 
 if not st.session_state.authenticated:
-    check_password()
+    check_login()
     st.stop()
 
 # ================= ADATTÁROLÁS ÉS ARCHIVÁLÁS =================
@@ -120,7 +152,6 @@ if "db" not in st.session_state:
 
 db = st.session_state.db
 
-# Biztosítsuk a "stats" kulcs meglétét
 if "stats" not in db:
     old_data = db.get("data", {})
     db["stats"] = {}
@@ -128,24 +159,89 @@ if "stats" not in db:
         db["stats"][k] = {"unit": "Ft", "data": v}
     save_data(db)
 
+# Friss aktuális felhasználói adatok lekérése a fájlból
+USERS = load_users()
+current_user_info = USERS.get(st.session_state.current_user, {"allowed_stats": []})
+allowed_stat_names = current_user_info["allowed_stats"]
+
+all_stat_names = list(db["stats"].keys())
+
+if "*" in allowed_stat_names:
+    stat_names = all_stat_names
+else:
+    stat_names = [s for s in all_stat_names if s in allowed_stat_names]
+
+# Ha a felhasználónak egyetlen statisztikája sincs engedélyezve
+if not stat_names:
+    st.warning("⚠️ Ehhez a felhasználóhoz nincs hozzárendelve látható statisztika.")
+    if st.sidebar.button("🚪 Kijelentkezés"):
+        st.session_state.authenticated = False
+        st.session_state.current_user = None
+        st.rerun()
+    st.stop()
+
 # ================= OLDALSÁV =================
 st.sidebar.header("📊 STATISZTIKA BEÁLLÍTÁSOK")
+st.sidebar.info(f"Bejelentkezve: **{st.session_state.current_user}**")
 
 if st.sidebar.button("🚪 Kijelentkezés"):
     st.session_state.authenticated = False
+    st.session_state.current_user = None
     st.rerun()
 
 st.sidebar.markdown("---")
 
-stat_names = list(db["stats"].keys())
-if not stat_names:
-    db["stats"]["Bruttó Beérkezett Bevétel"] = {"unit": "Ft", "data": []}
-    stat_names = list(db["stats"].keys())
+# --- ADMIN FELÜLET: Felhasználók kezelése a weboldalon (Csak adminnak látszik) ---
+if "*" in allowed_stat_names:
+    with st.sidebar.expander("👥 Felhasználók & Jogosultságok"):
+        st.write("### Új felhasználó felvétele")
+        new_u_name = st.text_input("Új felhasználónév:", key="new_u_name")
+        new_u_pass = st.text_input("Jelszó:", type="password", key="new_u_pass")
+        
+        # Kiválaszthatja, hogy melyik statisztikákat láthatja
+        available_stats_for_assign = list(db["stats"].keys())
+        is_admin_check = st.checkbox("Teljes admin jog (*)", key="new_u_is_admin")
+        
+        assigned_stats = []
+        if not is_admin_check:
+            assigned_stats = st.multiselect("Elérhető statisztikák:", options=available_stats_for_assign, key="new_u_multiselect")
+        else:
+            assigned_stats = ["*"]
+
+        if st.button("Felhasználó mentése / létrehozása"):
+            if new_u_name and new_u_pass:
+                USERS[new_u_name] = {
+                    "password": new_u_pass,
+                    "allowed_stats": assigned_stats
+                }
+                save_users(USERS)
+                st.success(f"'{new_u_name}' sikeresen létrehozva!")
+                st.rerun()
+            else:
+                st.warning("Add meg a nevet és a jelszót!")
+
+        st.write("### Meglévő felhasználók törlése")
+        users_to_delete = [u for u in USERS.keys() if u != st.session_state.current_user] # Magát ne tudja törölni
+        if users_to_delete:
+            selected_user_to_del = st.selectbox("Válassz törlendő felhasználót:", options=users_to_delete)
+            if st.button("🔴 Felhasználó Törlése"):
+                if selected_user_to_del in USERS:
+                    del USERS[selected_user_to_del]
+                    save_users(USERS)
+                    st.success(f"'{selected_user_to_del}' törölve!")
+                    st.rerun()
+        else:
+            st.info("Nincs más törölhető felhasználó.")
+
+        st.markdown("---")
 
 # --- Lenyíló rész a régi / archív statisztikák kiválasztásához ---
 with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
     archive_db = load_archive()
-    archive_names = list(archive_db.keys())
+    if "*" in allowed_stat_names:
+        archive_names = list(archive_db.keys())
+    else:
+        archive_names = [s for s in archive_db.keys() if s in allowed_stat_names]
     
     if archive_names:
         selected_archived_stat = st.selectbox("Válassz az archívumból:", options=archive_names, key="archive_selectbox")
@@ -156,19 +252,16 @@ with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
                 st.success(f"'{selected_archived_stat}' sikeresen visszatöltve!")
                 st.rerun()
     else:
-        st.info("Még nincsenek archivált elemek.")
+        st.info("Még nincsenek elérhető archivált elemek.")
 
-# Alapértelmezett vagy felülírt kiválasztott statisztika kezelése
 if "selected_stat_override" in st.session_state and st.session_state["selected_stat_override"] in stat_names:
     default_stat_idx = stat_names.index(st.session_state["selected_stat_override"])
 else:
     default_stat_idx = 0
 
-# Fő legördülő szűrő a nevek között
 selected_stat = st.sidebar.selectbox("Aktív Statisztika Szűrése / Kiválasztása:", stat_names, index=default_stat_idx)
 st.session_state["selected_stat_override"] = selected_stat
 
-# Külön név és mértékegység létrehozása fül
 with st.sidebar.expander("➕ Új statisztika létrehozása"):
     new_stat_name = st.text_input("Statisztika neve:", placeholder="pl. Ügyfelek száma")
     new_stat_unit = st.text_input("Mértékegység / Kategória:", placeholder="pl. fő, db, Ft")
@@ -259,7 +352,6 @@ with col_left:
     st.subheader("📋 Adat-táblázat")
     stat_data_list = db["stats"][selected_stat]["data"]
     
-    # Szűrés alkalmazása a táblázatra és grafikonra
     if stat_data_list:
         filtered_items = []
         for item in stat_data_list:
