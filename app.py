@@ -68,15 +68,13 @@ def load_data():
     return {
         "data": {
             "Bruttó Beérkezett Bevétel (Ft)": [
-                ["2026-08-06", 1200000],
-                ["2026-08-13", 1450000],
-                ["2026-08-20", 1100000],
-                ["2026-08-27", 1600000],
-                ["2026-09-03", 1550000],
-                ["2026-09-10", 1800000],
-                ["2026-09-17", 1300000],
-                ["2026-09-24", 2100000],
-                ["2026-10-01", 2250000]
+                ["2026-08-08", 500000],
+                ["2026-08-15", 800000],
+                ["2026-08-25", 1200000],
+                ["2026-08-30", 1600000],
+                ["2026-09-13", 2120000],  # A korrigált pont / fúrási pont
+                ["2026-09-20", 2120000],
+                ["2026-09-21", 2120000]
             ]
         },
         "settings": {}
@@ -174,8 +172,8 @@ with col_left:
         
         st.dataframe(df, use_container_width=True)
 
-        delete_idx = st.number_input("Törlendő sor száma (index):", min_value=0, max_value=len(df)-1, step=1)
-        if st.button("🔴 Sor Törlése"):
+        delete_idx = st.number_input("Törlendő sor száma (index):", min_value=0, max_value=len(df)-1 if len(df) > 0 else 0, step=1)
+        if st.button("🔴 Sor Törlése") and len(df) > 0:
             db["data"][selected_stat].pop(delete_idx)
             save_data(db)
             st.rerun()
@@ -241,14 +239,13 @@ with col_right:
                 annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
             )
 
-        # ================= KISEBB FEKETE PONT A CÍM ÉS A DÁTUM ALATT, KÖZÉPEN =================
+        # KISEBB FEKETE PONT A CÍM ÉS A DÁTUM ALATT, KÖZÉPEN
         calc_ymin = float(ymin) if ymin else min(y_vals) * 0.9
         calc_ymax = float(ymax) if ymax else max(max(y_vals), line_target_val if line_target_val else 0) * 1.15
         
         center_x = (min(x_numeric) + max(x_numeric)) / 2.0 if x_numeric else 0
-        center_y = calc_ymax * 0.965  # Pontosan a címsor alatti területen, vízszintesen középen
+        center_y = calc_ymax * 0.965
 
-        # Kisebb, 8-as méretű fekete pont
         fig.add_trace(go.Scatter(
             x=[center_x],
             y=[center_y],
@@ -261,7 +258,7 @@ with col_right:
         # Adatpontok és értékek
         text_vals = [f"{int(val):,} Ft".replace(",", " ") for val in y_vals]
 
-        # Magyar dátumok a tengely felirataihoz
+        # Magyar hónap nevek a tengely felirataihoz
         hu_months = {
             1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
             5: "máj.", 6: "jún.", 7: "júl.", 8: "aug.",
