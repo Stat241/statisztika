@@ -55,8 +55,9 @@ if not st.session_state.authenticated:
     check_password()
     st.stop()
 
-# ================= ADATTÁROLÁS =================
+# ================= ADATTÁROLÁS ÉS ARCHIVÁLÁS =================
 DB_FILE = "statisztikak.json"
+ARCHIVE_FILE = "archivum.json"
 
 def load_data():
     if os.path.exists(DB_FILE):
@@ -101,12 +102,25 @@ def save_data(db):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(db, f, ensure_ascii=False, indent=2)
 
+def load_archive():
+    if os.path.exists(ARCHIVE_FILE):
+        try:
+            with open(ARCHIVE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_archive(archive_data):
+    with open(ARCHIVE_FILE, "w", encoding="utf-8") as f:
+        json.dump(archive_data, f, ensure_ascii=False, indent=2)
+
 if "db" not in st.session_state:
     st.session_state.db = load_data()
 
 db = st.session_state.db
 
-# Biztosítsuk a "stats" kulcs meglétét (régi formátum migrációhoz)
+# Biztosítsuk a "stats" kulcs meglétét
 if "stats" not in db:
     old_data = db.get("data", {})
     db["stats"] = {}
@@ -129,18 +143,22 @@ if not stat_names:
     stat_names = list(db["stats"].keys())
 
 # --- Lenyíló rész a régi / archív statisztikák kiválasztásához ---
-with st.sidebar.expander("📂 Régi / Archív statisztikák kiválasztása"):
-    archived_stat = st.selectbox(
-        "Válassz a korábbi nevek közül:", 
-        options=stat_names, 
-        key="archived_selectbox"
-    )
-    if st.button("Kiválasztott archív betöltése"):
-        # Beállítjuk az aktuális kiválasztást a session_state-be, ha szükséges
-        st.session_state["selected_stat_override"] = archived_stat
+with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
+    archive_db = load_archive()
+    archive_names = list(archive_db.keys())
+    
+    if archive_names:
+        selected_archived_stat = st.selectbox("Válassz az archívumból:", options=archive_names, key="archive_selectbox")
+        if st.button("Archivált statisztika átemelése aktívba"):
+            if selected_archived_stat in archive_db:
+                db["stats"][selected_archived_stat] = archive_db[selected_archived_stat]
+                save_data(db)
+                st.success(f"'{selected_archived_stat' sikeresen visszatöltve!")
+                st.rerun()
+    else:
+        st.info("Még nincsenek archivált elemek.")
 
 # Alapértelmezett vagy felülírt kiválasztott statisztika kezelése
-default_stat = stat_names[0]
 if "selected_stat_override" in st.session_state and st.session_state["selected_stat_override"] in stat_names:
     default_stat_idx = stat_names.index(st.session_state["selected_stat_override"])
 else:
@@ -148,8 +166,6 @@ else:
 
 # Fő legördülő szűrő a nevek között
 selected_stat = st.sidebar.selectbox("Aktív Statisztika Szűrése / Kiválasztása:", stat_names, index=default_stat_idx)
-
-# Frissítjük a felülírást, ha a fő selectbox-ból változtatnak
 st.session_state["selected_stat_override"] = selected_stat
 
 # Külön név és mértékegység létrehozása fül
@@ -166,10 +182,31 @@ with st.sidebar.expander("➕ Új statisztika létrehozása"):
             else:
                 st.warning("Ilyen nevű statisztika már létezik!")
 
+# --- ARCHIVÁLÓ GOMB ---
+st.sidebar.markdown("---")
+if st.sidebar.button("📦 Jelenlegi statisztika archiválása"):
+    archive_db = load_archive()
+    archive_db[selected_stat] = db["stats"][selected_stat]
+    save_archive(archive_db)
+    st.sidebar.success(f"'{selected_stat}' sikeresen archiválva!")
+
 current_unit = db["stats"][selected_stat].get("unit", "")
 stat_settings = db.get("settings", {}).get(selected_stat, {})
 
 period = st.sidebar.radio("Időszak bontás:", ["Napi", "Heti (Cs)", "Havi"], index=1)
+
+# --- DÁTUM SZŰRÉS (Időszakra szűrés) ---
+st.sidebar.subheader("🗓️ Dátum szerinti szűrés")
+enable_date_filter = st.sidebar.checkbox("Időszak szűkítése", value=False)
+
+start_date_filter, end_date_filter = None, None
+if enable_date_filter:
+    stat_data_raw = db["stats"][selected_stat]["data"]
+    if stat_data_raw:
+        all_dates = [datetime.strptime(item[0], "%Y-%m-%d").date() for item in stat_data_raw]
+        min_d, max_d = min(all_dates), max(all_dates)
+        start_date_filter = st.sidebar.date_input("Kezdő dátum", value=min_d, min_value=min_d, max_value=max_d)
+        end_date_filter = st.sidebar.date_input("Záró dátum", value=max_d, min_value=min_d, max_value=max_d)
 
 st.sidebar.subheader("📐 Érték Tengely & Vonalak")
 col_min, col_max, col_step = st.sidebar.columns(3)
@@ -181,7 +218,6 @@ with col_max:
 with col_step:
     ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
 
-# Referencia vonal beállítások és kapcsoló
 show_ref_line = st.sidebar.checkbox("Referencia vonal megjelenítése", value=stat_settings.get("show_ref", True))
 ref_line_val = st.sidebar.text_input(
     "Referencia vonal értéke:", 
@@ -222,23 +258,47 @@ with col_left:
 
     st.subheader("📋 Adat-táblázat")
     stat_data_list = db["stats"][selected_stat]["data"]
+    
+    # Szűrés alkalmazása a táblázatra és grafikonra
     if stat_data_list:
-        df = pd.DataFrame(stat_data_list, columns=["Dátum", f"Érték ({current_unit})"])
-        df = df.sort_values(by="Dátum")
-        
-        st.dataframe(df, use_container_width=True)
+        filtered_items = []
+        for item in stat_data_list:
+            item_date = datetime.strptime(item[0], "%Y-%m-%d").date()
+            if enable_date_filter and start_date_filter and end_date_filter:
+                if start_date_filter <= item_date <= end_date_filter:
+                    filtered_items.append(item)
+            else:
+                filtered_items.append(item)
+
+        df = pd.DataFrame(filtered_items, columns=["Dátum", f"Érték ({current_unit})"])
+        if not df.empty:
+            df = df.sort_values(by="Dátum")
+            st.dataframe(df, use_container_width=True)
 
         delete_idx = st.number_input("Törlendő sor száma (index):", min_value=0, max_value=len(df)-1 if len(df) > 0 else 0, step=1)
         if st.button("🔴 Sor Törlése") and len(df) > 0:
-            db["stats"][selected_stat]["data"].pop(delete_idx)
-            save_data(db)
-            st.rerun()
+            # Eredeti listából töröljük az index alapján
+            target_to_delete = df.iloc[int(delete_idx)].tolist()
+            if target_to_delete in db["stats"][selected_stat]["data"]:
+                db["stats"][selected_stat]["data"].remove(target_to_delete)
+                save_data(db)
+                st.rerun()
 
 # JOBB OLDAL: Interaktív Grafikon
 with col_right:
     stat_data_list = db["stats"][selected_stat]["data"]
     if stat_data_list:
-        raw_items = sorted(stat_data_list, key=lambda x: str(x[0]))
+        # Szűrés alkalmazása a grafikonra is
+        raw_items = []
+        for item in stat_data_list:
+            item_date = datetime.strptime(item[0], "%Y-%m-%d").date()
+            if enable_date_filter and start_date_filter and end_date_filter:
+                if start_date_filter <= item_date <= end_date_filter:
+                    raw_items.append(item)
+            else:
+                raw_items.append(item)
+
+        raw_items = sorted(raw_items, key=lambda x: str(x[0]))
         
         date_range_str = ""
         if len(raw_items) > 0:
@@ -251,133 +311,131 @@ with col_right:
 
         fig = go.Figure()
 
-        x_numeric = list(range(len(raw_items)))
-        y_vals = [item[1] for item in raw_items]
+        if len(raw_items) > 0:
+            x_numeric = list(range(len(raw_items)))
+            y_vals = [item[1] for item in raw_items]
 
-        # Összekötő vonalak a grafikonon
-        for i in range(len(raw_items) - 1):
-            x1, y1 = x_numeric[i], y_vals[i]
-            x2, y2 = x_numeric[i+1], y_vals[i+1]
+            # Összekötő vonalak
+            for i in range(len(raw_items) - 1):
+                x1, y1 = x_numeric[i], y_vals[i]
+                x2, y2 = x_numeric[i+1], y_vals[i+1]
+                
+                color = "#116B3A" if y2 > y1 else "#991B1B"
+                
+                fig.add_trace(go.Scatter(
+                    x=[x1, x2],
+                    y=[y1, y2],
+                    mode='lines',
+                    line=dict(color=color, width=6),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+
+            line_target_val = None
+            if show_ref_line:
+                if ref_line_val:
+                    try:
+                        line_target_val = float(ref_line_val)
+                    except ValueError:
+                        line_target_val = y_vals[-1]
+                else:
+                    line_target_val = y_vals[-1]
+
+                if line_target_val is not None:
+                    val_str = f"{int(line_target_val):,}".replace(",", " ") if line_target_val.is_integer() else f"{line_target_val}"
+                    formatted_ref_text = f" {val_str} {current_unit}".strip()
+                    fig.add_hline(
+                        y=line_target_val,
+                        line_dash="solid",
+                        line_color="#DC2626",
+                        line_width=6,
+                        annotation_text=formatted_ref_text,
+                        annotation_position="bottom right",
+                        annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
+                    )
+
+            text_vals = [f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}" for val in y_vals]
+            text_vals = [f"{v} {current_unit}".strip() for v in text_vals]
+
+            hu_months = {
+                1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
+                5: "máj.", 6: "jún.", 7: "júl.", 8: "aug.",
+                9: "szept.", 10: "okt.", 11: "nov.", 12: "dec."
+            }
             
-            color = "#116B3A" if y2 > y1 else "#991B1B"
-            
+            x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
+            x_formatted = [f"{d.year}. {hu_months[d.month]} {d.day}." for d in x_dates]
+
+            text_positions = ["middle right"] + ["top center"] * (len(x_numeric) - 1)
+
             fig.add_trace(go.Scatter(
-                x=[x1, x2],
-                y=[y1, y2],
-                mode='lines',
-                line=dict(color=color, width=6),
-                showlegend=False,
-                hoverinfo='skip'
+                x=x_numeric,
+                y=y_vals,
+                mode='markers+text',
+                marker=dict(size=15, color="#1E293B"),
+                text=text_vals,
+                textposition=text_positions,
+                textfont=dict(size=19, color="#000000", family="Arial Black"),
+                showlegend=False
             ))
 
-        line_target_val = None
-        if show_ref_line:
-            if ref_line_val:
-                try:
-                    line_target_val = float(ref_line_val)
-                except ValueError:
-                    line_target_val = y_vals[-1]
-            else:
-                line_target_val = y_vals[-1]
-
-            # VÍZSZINTES REFERENCIA VONAL
-            if line_target_val is not None:
-                val_str = f"{int(line_target_val):,}".replace(",", " ") if line_target_val.is_integer() else f"{line_target_val}"
-                formatted_ref_text = f" {val_str} {current_unit}".strip()
-                fig.add_hline(
-                    y=line_target_val,
-                    line_dash="solid",
-                    line_color="#DC2626",
-                    line_width=6,
-                    annotation_text=formatted_ref_text,
-                    annotation_position="bottom right",
-                    annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
+            layout_args = dict(
+                title=dict(
+                    text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Dátum: {date_range_str}</span>",
+                    x=0.5,
+                    xref="paper",
+                    xanchor='center',
+                    yanchor='top',
+                    font=dict(size=42, color="#000000")
+                ),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                margin=dict(t=150, b=80, l=130, r=80),
+                xaxis=dict(
+                    title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
+                    tickmode="array",
+                    tickvals=x_numeric,
+                    ticktext=x_formatted,
+                    showgrid=True,
+                    gridcolor="#F1F5F9",
+                    gridwidth=2.5,
+                    tickfont=dict(color="#000000", size=22, family="Arial Black"),
+                    showline=True,
+                    linecolor="#000000",
+                    linewidth=3,
+                    range=[0, len(x_numeric) - 0.7]
+                ),
+                yaxis=dict(
+                    title=dict(text=f"<b>Érték ({current_unit})</b>", font=dict(color="#000000", size=26)),
+                    showgrid=True,
+                    gridcolor="#F1F5F9",
+                    gridwidth=2.5,
+                    tickfont=dict(color="#000000", size=24, family="Arial Black"),
+                    showline=True,
+                    linecolor="#000000",
+                    linewidth=3
                 )
-
-        text_vals = [f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}" for val in y_vals]
-        text_vals = [f"{v} {current_unit}".strip() for v in text_vals]
-
-        hu_months = {
-            1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
-            5: "máj.", 6: "jún.", 7: "júl.", 8: "aug.",
-            9: "szept.", 10: "okt.", 11: "nov.", 12: "dec."
-        }
-        
-        x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
-        x_formatted = [f"{d.year}. {hu_months[d.month]} {d.day}." for d in x_dates]
-
-        # Minden pont megkapja a saját pozícióját (az első pont jobbra igazítva, a többi felül)
-        text_positions = ["middle right"] + ["top center"] * (len(x_numeric) - 1)
-
-        fig.add_trace(go.Scatter(
-            x=x_numeric,
-            y=y_vals,
-            mode='markers+text',
-            marker=dict(size=15, color="#1E293B"),
-            text=text_vals,
-            textposition=text_positions,
-            textfont=dict(size=19, color="#000000", family="Arial Black"),
-            showlegend=False
-        ))
-
-        layout_args = dict(
-            title=dict(
-                text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Dátum: {date_range_str}</span>",
-                x=0.5,
-                xref="paper",
-                xanchor='center',
-                yanchor='top',
-                font=dict(size=42, color="#000000")
-            ),
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            # Elegendő bal margó a legelső érték szövegének
-            margin=dict(t=150, b=80, l=130, r=80),
-            xaxis=dict(
-                title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
-                tickmode="array",
-                tickvals=x_numeric,
-                ticktext=x_formatted,
-                showgrid=True,
-                gridcolor="#F1F5F9",
-                gridwidth=2.5,
-                tickfont=dict(color="#000000", size=22, family="Arial Black"),
-                showline=True,
-                linecolor="#000000",
-                linewidth=3,
-                range=[0, len(x_numeric) - 0.7]  # Pontosan a bal tengelyhez (0-hoz) igazítja a legelső pontot
-            ),
-            yaxis=dict(
-                title=dict(text=f"<b>Érték ({current_unit})</b>", font=dict(color="#000000", size=26)),
-                showgrid=True,
-                gridcolor="#F1F5F9",
-                gridwidth=2.5,
-                tickfont=dict(color="#000000", size=24, family="Arial Black"),
-                showline=True,
-                linecolor="#000000",
-                linewidth=3
             )
-        )
 
-        try:
-            if ymin and ymax:
-                layout_args["yaxis"]["range"] = [float(ymin), float(ymax)]
-            if ystep:
-                layout_args["yaxis"]["dtick"] = float(ystep)
-        except Exception:
-            pass
+            try:
+                if ymin and ymax:
+                    layout_args["yaxis"]["range"] = [float(ymin), float(ymax)]
+                if ystep:
+                    layout_args["yaxis"]["dtick"] = float(ystep)
+            except Exception:
+                pass
 
-        fig.update_layout(**layout_args)
+            fig.update_layout(**layout_args)
 
-        config = {
-            'toImageButtonOptions': {
-                'format': 'png',
-                'filename': f'{selected_stat}_grafikon',
-                'height': 1200,
-                'width': 1800,
-                'scale': 3
-            },
-            'displayModeBar': True
-        }
+            config = {
+                'toImageButtonOptions': {
+                    'format': 'png',
+                    'filename': f'{selected_stat}_grafikon',
+                    'height': 1200,
+                    'width': 1800,
+                    'scale': 3
+                },
+                'displayModeBar': True
+            }
 
-        st.plotly_chart(fig, use_container_width=True, config=config)
+            st.plotly_chart(fig, use_container_width=True, config=config)
