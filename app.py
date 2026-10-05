@@ -7,23 +7,20 @@ from datetime import datetime
 
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
-# ================= NYOMTATÁSI CSS (Élesítés és felesleges elemek elrejtése) =================
+# ================= NYOMTATÁSI CSS =================
 st.markdown("""
     <style>
     @media print {
-        /* Oldalsáv és beviteli mezők elrejtése nyomtatáskor */
         [data-testid="stSidebar"], 
         .stForm, 
         button, 
         [data-testid="stHeader"] {
             display: none !important;
         }
-        /* Munkaterület teljes szélességűre állítása */
         .main .block-container {
             padding: 0 !important;
             max-width: 100% !important;
         }
-        /* Grafikon élesítése nyomtatáshoz */
         .js-plotly-plot .plotly .main-svg {
             shape-rendering: geometricPrecision !important;
             text-rendering: geometricPrecision !important;
@@ -183,20 +180,37 @@ with col_right:
 
         fig = go.Figure()
 
+        # Vonalak megrajzolása a pontok között (zöld/piros)
         for i in range(len(raw_items) - 1):
             x1, y1 = raw_items[i][0], raw_items[i][1]
             x2, y2 = raw_items[i+1][0], raw_items[i+1][1]
-            
             color = "#116B3A" if y2 >= y1 else "#991B1B"
             
             fig.add_trace(go.Scatter(
                 x=[x1, x2],
                 y=[y1, y2],
-                mode='lines+markers',
+                mode='lines',
                 line=dict(color=color, width=4),
-                marker=dict(size=8, color=color),
-                showlegend=False
+                showlegend=False,
+                hoverinfo='skip'
             ))
+
+        # Adatpontok és az értékek kiírása a pontok felé
+        x_vals = [item[0] for item in raw_items]
+        y_vals = [item[1] for item in raw_items]
+        # Értékek megformázása ezres elválasztóval (pl. 1 200 000 Ft)
+        text_vals = [f"{int(val):,} Ft".replace(",", " ") for val in y_vals]
+
+        fig.add_trace(go.Scatter(
+            x=x_vals,
+            y=y_vals,
+            mode='markers+text',
+            marker=dict(size=9, color="#1E293B"),
+            text=text_vals,
+            textposition="top center",
+            textfont=dict(size=12, color="#1E293B", family="Arial Black"),
+            showlegend=False
+        ))
 
         layout_args = dict(
             title=dict(
@@ -209,7 +223,7 @@ with col_right:
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(t=80, b=40, l=40, r=40),
+            margin=dict(t=90, b=40, l=40, r=40),
             xaxis=dict(title="Dátum", showgrid=True, gridcolor="#E2E8F0"),
             yaxis=dict(title="Érték (Ft)", showgrid=True, gridcolor="#E2E8F0")
         )
@@ -224,14 +238,13 @@ with col_right:
 
         fig.update_layout(**layout_args)
 
-        # Plotly beállítások nyomtatáshoz és letöltéshez (PNG export gomb élesítése)
         config = {
             'toImageButtonOptions': {
                 'format': 'png',
                 'filename': f'{selected_stat}_grafikon',
                 'height': 1200,
                 'width': 1800,
-                'scale': 3 # 3x-os nagyítás / kristálytiszta Ultra HD felbontás
+                'scale': 3
             },
             'displayModeBar': True
         }
