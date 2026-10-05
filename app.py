@@ -72,7 +72,7 @@ def load_data():
                 ["2026-08-15", 800000],
                 ["2026-08-25", 1200000],
                 ["2026-08-30", 1600000],
-                ["2026-09-13", 2120000],  # A grafikonra szánt korrigált pont
+                ["2026-09-13", 2120000],
                 ["2026-09-20", 2120000],
                 ["2026-09-21", 2120000]
             ]
@@ -222,6 +222,7 @@ with col_right:
         else:
             line_target_val = y_vals[-1]
 
+        # VÍZSZINTES REFERENCIA VONAL
         if line_target_val is not None:
             formatted_ref_text = f" {int(line_target_val):,} Ft".replace(",", " ")
             fig.add_hline(
@@ -265,17 +266,17 @@ with col_right:
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(t=150, b=80, l=90, r=60),
-            # ================= KIS FEKETE PONT A LAP LEGES LEGTETEJÉN, KÖZÉPEN =================
+            margin=dict(t=160, b=80, l=90, r=60),
+            # ================= KIS FEKETE PONT A LAP LEGES-LEGTETEJÉN, KÖZÉPEN =================
             shapes=[
                 dict(
                     type="circle",
                     xref="paper",
                     yref="paper",
-                    x0=0.495,
-                    y0=1.04,
-                    x1=0.505,
-                    y1=1.06,
+                    x0=0.494,
+                    y0=1.12,
+                    x1=0.506,
+                    y1=1.16,
                     fillcolor="#000000",
                     line=dict(color="#000000", width=1)
                 )
