@@ -234,18 +234,6 @@ with col_right:
                 annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
             )
 
-        # ================= KIS FEKETE PONT A LAP LEGES LEGTETEJÉN, KÖZÉPEN =================
-        fig.add_trace(go.Scatter(
-            xref="paper",
-            yref="paper",
-            x=[0.5],
-            y=[1.06],  # A lap legfelső margójának közepére pozícionálva
-            mode='markers',
-            marker=dict(size=10, color="#000000"),
-            showlegend=False,
-            hoverinfo='skip'
-        ))
-
         text_vals = [f"{int(val):,} Ft".replace(",", " ") for val in y_vals]
 
         hu_months = {
@@ -278,6 +266,20 @@ with col_right:
             plot_bgcolor="white",
             paper_bgcolor="white",
             margin=dict(t=150, b=80, l=90, r=60),
+            # ================= KIS FEKETE PONT A LAP LEGES LEGTETEJÉN, KÖZÉPEN =================
+            shapes=[
+                dict(
+                    type="circle",
+                    xref="paper",
+                    yref="paper",
+                    x0=0.495,
+                    y0=1.04,
+                    x1=0.505,
+                    y1=1.06,
+                    fillcolor="#000000",
+                    line=dict(color="#000000", width=1)
+                )
+            ],
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
                 tickmode="array",
