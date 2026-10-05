@@ -246,26 +246,26 @@ with col_right:
             plot_bgcolor="white",
             paper_bgcolor="white",
             margin=dict(t=100, b=60, l=70, r=40),
-            # X tengely – Halvány, nyomtatásbarát rácsvonalak
+            # X tengely - Világosabb (#F1F5F9) és vastagabb (2.5 px) rácsvonalak
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=18)),
                 tickmode="array",
                 tickvals=x_vals,
                 ticktext=x_formatted,
                 showgrid=True,
-                gridcolor="#E2E8F0",
-                gridwidth=1,
+                gridcolor="#F1F5F9",
+                gridwidth=2.5,
                 tickfont=dict(color="#000000", size=15, family="Arial Black"),
                 showline=True,
                 linecolor="#000000",
                 linewidth=2
             ),
-            # Y tengely – Halvány, nyomtatásbarát rácsvonalak
+            # Y tengely - Világosabb (#F1F5F9) és vastagabb (2.5 px) rácsvonalak
             yaxis=dict(
                 title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=18)),
                 showgrid=True,
-                gridcolor="#E2E8F0",
-                gridwidth=1,
+                gridcolor="#F1F5F9",
+                gridwidth=2.5,
                 tickfont=dict(color="#000000", size=16, family="Arial Black"),
                 showline=True,
                 linecolor="#000000",
