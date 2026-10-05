@@ -241,22 +241,22 @@ with col_right:
                 annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
             )
 
-        # ================= ABSZOLÚT KÖZPÉNTI / FÚRÁSI PONT KISZÁMÍTÁSA =================
+        # ================= KÖZPONT / FÚRÁSI PONT ELHELYEZÉSE A TETEJÉN =================
         calc_ymin = float(ymin) if ymin else min(y_vals) * 0.9
         calc_ymax = float(ymax) if ymax else max(max(y_vals), line_target_val if line_target_val else 0) * 1.15
         
-        center_y = (calc_ymin + calc_ymax) / 2.0
         center_x = (min(x_numeric) + max(x_numeric)) / 2.0 if x_numeric else 0
+        center_y = calc_ymax * 0.975  # A legteteje alatt picit, hogy gyönyörűen látszódjon
 
-        # Középső jelölőpont (fúrási segédpont) kirajzolása pontosan a mértani közepre
+        # Középső jelölőpont (fúrási segédpont) a TETEJÉN kirajzolva
         fig.add_trace(go.Scatter(
             x=[center_x],
             y=[center_y],
             mode='markers+text',
-            marker=dict(size=18, color="#475569", symbol="cross"),
+            marker=dict(size=18, color="#DC2626", symbol="cross"),
             text=["⌖ KÖZPONT / FÚRÁSI PONT"],
             textposition="bottom center",
-            textfont=dict(size=16, color="#334155", family="Arial Black"),
+            textfont=dict(size=16, color="#DC2626", family="Arial Black"),
             showlegend=False,
             hoverinfo='skip'
         ))
