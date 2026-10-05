@@ -266,21 +266,7 @@ with col_right:
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(t=160, b=80, l=90, r=60),
-            # ================= KIS FEKETE PONT A LAP LEGES-LEGTETEJÉN, KÖZÉPEN =================
-            shapes=[
-                dict(
-                    type="circle",
-                    xref="paper",
-                    yref="paper",
-                    x0=0.494,
-                    y0=1.12,
-                    x1=0.506,
-                    y1=1.16,
-                    fillcolor="#000000",
-                    line=dict(color="#000000", width=1)
-                )
-            ],
+            margin=dict(t=150, b=80, l=90, r=60),
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
                 tickmode="array",
