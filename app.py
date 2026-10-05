@@ -197,7 +197,7 @@ with col_right:
 
         fig = go.Figure()
 
-        # Összekötő vonalak (Csak akkor ZÖLD, ha szigorúan növekszik az érték, egyébként PIROS)
+        # Összekötő vonalak (vastagabb, jól látható vonalvastagság: 5 px)
         for i in range(len(raw_items) - 1):
             x1, y1 = raw_items[i][0], raw_items[i][1]
             x2, y2 = raw_items[i+1][0], raw_items[i+1][1]
@@ -208,7 +208,7 @@ with col_right:
                 x=[x1, x2],
                 y=[y1, y2],
                 mode='lines',
-                line=dict(color=color, width=4),
+                line=dict(color=color, width=5),
                 showlegend=False,
                 hoverinfo='skip'
             ))
@@ -223,17 +223,17 @@ with col_right:
         else:
             line_target_val = raw_items[-1][1]
 
-        # Vízszintes egybefüggő referencia vonal kirajzolása (Vastagság: 4 px, nagyobb felirattal)
+        # Vízszintes egybefüggő referencia vonal kirajzolása (Vastagság: 5 px, nagy felirattal)
         if line_target_val is not None:
             formatted_ref_text = f" {int(line_target_val):,} Ft".replace(",", " ")
             fig.add_hline(
                 y=line_target_val,
-                line_dash="solid",        # Egybefüggő, folytonos vonal marad
-                line_color="#DC2626",       # Világosabb piros
-                line_width=4,              # Vastag vonal (4px)
+                line_dash="solid",        # Egybefüggő vonal
+                line_color="#DC2626",       # Piros
+                line_width=5,              # Vastag vonal (5px)
                 annotation_text=formatted_ref_text,
                 annotation_position="bottom right",
-                annotation_font=dict(size=16, color="#DC2626", family="Arial Black") # Megnövelt felirat
+                annotation_font=dict(size=18, color="#DC2626", family="Arial Black") # Nagyobb felirat
             )
 
         # Adatpontok és értékek
@@ -259,47 +259,47 @@ with col_right:
             x=x_vals,
             y=y_vals,
             mode='markers+text',
-            marker=dict(size=10, color="#1E293B"),
+            marker=dict(size=12, color="#1E293B"), # Pontok mérete picit nagyobb (12px)
             text=text_vals,
             textposition="top center",
-            textfont=dict(size=15, color="#000000", family="Arial Black"), # Pontok feletti értékek (nagyon picit nagyobb: 15)
+            textfont=dict(size=16, color="#000000", family="Arial Black"), # Pontok feletti értékek mérete (16px)
             showlegend=False
         ))
 
         layout_args = dict(
             title=dict(
-                text=f"<b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Dátum: {date_range_str}</span>", # Alcímet is növeltem
+                text=f"<b>{selected_stat}</b><br><span style='font-size: 22px; color: #1E293B;'>Dátum: {date_range_str}</span>",
                 x=0.5,
                 xref="paper",
                 xanchor='center',
                 yanchor='top',
-                font=dict(size=32, color="#000000") # Főcím nagyobbra állítva (32)
+                font=dict(size=36, color="#000000") # Főcím mérete (36px)
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(t=110, b=60, l=70, r=40),
+            margin=dict(t=120, b=70, l=80, r=50),
             xaxis=dict(
-                title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=20)), # Tengely cím megnövelve (20)
+                title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=22)), # Tengely cím mérete (22px)
                 tickmode="array",
                 tickvals=x_vals,
                 ticktext=x_formatted,
                 showgrid=True,
                 gridcolor="#F1F5F9",
                 gridwidth=2.5,
-                tickfont=dict(color="#000000", size=17, family="Arial Black"), # Tengely értékek megnövelve (17)
+                tickfont=dict(color="#000000", size=19, family="Arial Black"), # Tengely értékek mérete (19px)
                 showline=True,
                 linecolor="#000000",
-                linewidth=2
+                linewidth=2.5
             ),
             yaxis=dict(
-                title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=20)), # Tengely cím megnövelve (20)
+                title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=22)), # Tengely cím mérete (22px)
                 showgrid=True,
                 gridcolor="#F1F5F9",
                 gridwidth=2.5,
-                tickfont=dict(color="#000000", size=18, family="Arial Black"), # Tengely értékek megnövelve (18)
+                tickfont=dict(color="#000000", size=20, family="Arial Black"), # Tengely értékek mérete (20px)
                 showline=True,
                 linecolor="#000000",
-                linewidth=2
+                linewidth=2.5
             )
         )
 
