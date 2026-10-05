@@ -197,18 +197,13 @@ with col_right:
 
         fig = go.Figure()
 
-        # Dátumok átalakítása sorszámokká (időbélyeg / napok száma) a pontos középre helyezéshez
-        x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
-        x_numeric = [(d - x_dates[0]).total_days() if len(x_dates) > 1 else 0 for d in x_dates]
-        if len(x_numeric) == 1:
-            x_numeric = [0]
-
+        x_vals = [item[0] for item in raw_items]
         y_vals = [item[1] for item in raw_items]
 
         # Összekötő vonalak (6 px)
         for i in range(len(raw_items) - 1):
-            x1, y1 = x_numeric[i], y_vals[i]
-            x2, y2 = x_numeric[i+1], y_vals[i+1]
+            x1, y1 = x_vals[i], y_vals[i]
+            x2, y2 = x_vals[i+1], y_vals[i+1]
             
             color = "#116B3A" if y2 > y1 else "#991B1B"
             
@@ -249,9 +244,10 @@ with col_right:
         calc_ymax = float(ymax) if ymax else max(max(y_vals), line_target_val if line_target_val else 0) * 1.15
         
         center_y = (calc_ymin + calc_ymax) / 2.0
-        center_x = (min(x_numeric) + max(x_numeric)) / 2.0 if x_numeric else 0
+        center_x_idx = len(x_vals) // 2
+        center_x = x_vals[center_x_idx]
 
-        # Középső jelölőpont (fúrási segédpont) kirajzolása a pont mértani közepére
+        # Középső jelölőpont (fúrási segédpont) kirajzolása
         fig.add_trace(go.Scatter(
             x=[center_x],
             y=[center_y],
@@ -274,11 +270,15 @@ with col_right:
             9: "szept.", 10: "okt.", 11: "nov.", 12: "dec."
         }
         x_formatted = []
-        for d in x_dates:
-            x_formatted.append(f"{d.year}. {hu_months[d.month]} {d.day}.")
+        for x in x_vals:
+            try:
+                dt = datetime.strptime(str(x), "%Y-%m-%d")
+                x_formatted.append(f"{dt.year}. {hu_months[dt.month]} {dt.day}.")
+            except Exception:
+                x_formatted.append(str(x))
 
         fig.add_trace(go.Scatter(
-            x=x_numeric,
+            x=x_vals,
             y=y_vals,
             mode='markers+text',
             marker=dict(size=15, color="#1E293B"),
@@ -303,7 +303,7 @@ with col_right:
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
                 tickmode="array",
-                tickvals=x_numeric,
+                tickvals=x_vals,
                 ticktext=x_formatted,
                 showgrid=True,
                 gridcolor="#F1F5F9",
@@ -311,8 +311,7 @@ with col_right:
                 tickfont=dict(color="#000000", size=22, family="Arial Black"),
                 showline=True,
                 linecolor="#000000",
-                linewidth=3,
-                range=[min(x_numeric) - (max(x_numeric)*0.05 if max(x_numeric) > 0 else 1), max(x_numeric) + (max(x_numeric)*0.05 if max(x_numeric) > 0 else 1)]
+                linewidth=3
             ),
             yaxis=dict(
                 title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=26)),
