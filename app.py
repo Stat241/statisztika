@@ -113,16 +113,8 @@ if st.sidebar.button("💾 Beállítások Mentése"):
     save_data(db)
     st.sidebar.success("Beállítások elmentve!")
 
-# ================= FEJLÉC (NYOMTATÁSHOZ ÉS MEGJELENÍTÉSHEZ) =================
+# ================= FEJLÉC =================
 today_str = datetime.now().strftime("%Y.%m.%d.")
-
-st.markdown(f"""
-    <div style='border-bottom: 2px solid #116B3A; padding-bottom: 10px; margin-bottom: 20px;'>
-        <h1 style='margin: 0; color: #1E293B;'>📈 STATISZTIKA KIMUTATÁS</h1>
-        <h3 style='margin: 5px 0 0 0; color: #116B3A;'>Megnevezés: {selected_stat}</h3>
-        <p style='margin: 5px 0 0 0; color: #64748B; font-size: 14px;'>Nyomtatás/Lekérés dátuma: <b>{today_str}</b> | Bontás: <b>{period}</b></p>
-    </div>
-""", unsafe_allow_html=True)
 
 col_left, col_right = st.columns([1, 2])
 
@@ -156,8 +148,6 @@ with col_left:
 
 # JOBB OLDAL: Interaktív Grafikon
 with col_right:
-    st.subheader(f"📊 Grafikon: {selected_stat}")
-    
     if selected_stat in db["data"] and db["data"][selected_stat]:
         raw_items = sorted(db["data"][selected_stat], key=lambda x: x[0])
         
@@ -179,9 +169,16 @@ with col_right:
             ))
 
         layout_args = dict(
-            title=f"{selected_stat} - ({today_str})",
+            title=dict(
+                text=f"<b>{selected_stat}</b><br><span style='font-size: 16px; color: #64748B;'>Dátum: {today_str}</span>",
+                x=0.5,
+                xanchor='center',
+                yanchor='top',
+                font=dict(size=26, color="#1E293B")
+            ),
             plot_bgcolor="white",
             paper_bgcolor="white",
+            margin=dict(t=80, b=40, l=40, r=40),
             xaxis=dict(title="Dátum", showgrid=True, gridcolor="#E2E8F0"),
             yaxis=dict(title="Érték (Ft)", showgrid=True, gridcolor="#E2E8F0")
         )
