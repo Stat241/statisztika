@@ -156,6 +156,8 @@ with col_max:
 with col_step:
     ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
 
+# Referencia vonal beállítások és kapcsoló
+show_ref_line = st.sidebar.checkbox("Referencia vonal megjelenítése", value=stat_settings.get("show_ref", True))
 ref_line_val = st.sidebar.text_input(
     "Referencia vonal értéke:", 
     value=stat_settings.get("ref_line", ""),
@@ -170,6 +172,7 @@ if st.sidebar.button("💾 Beállítások Mentése"):
         "ymin": ymin,
         "ymax": ymax,
         "ystep": ystep,
+        "show_ref": show_ref_line,
         "ref_line": ref_line_val
     }
     save_data(db)
@@ -244,27 +247,28 @@ with col_right:
             ))
 
         line_target_val = None
-        if ref_line_val:
-            try:
-                line_target_val = float(ref_line_val)
-            except ValueError:
+        if show_ref_line:
+            if ref_line_val:
+                try:
+                    line_target_val = float(ref_line_val)
+                except ValueError:
+                    line_target_val = y_vals[-1]
+            else:
                 line_target_val = y_vals[-1]
-        else:
-            line_target_val = y_vals[-1]
 
-        # VÍZSZINTES REFERENCIA VONAL
-        if line_target_val is not None:
-            val_str = f"{int(line_target_val):,}".replace(",", " ") if line_target_val.is_integer() else f"{line_target_val}"
-            formatted_ref_text = f" {val_str} {current_unit}".strip()
-            fig.add_hline(
-                y=line_target_val,
-                line_dash="solid",
-                line_color="#DC2626",
-                line_width=6,
-                annotation_text=formatted_ref_text,
-                annotation_position="bottom right",
-                annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
-            )
+            # VÍZSZINTES REFERENCIA VONAL
+            if line_target_val is not None:
+                val_str = f"{int(line_target_val):,}".replace(",", " ") if line_target_val.is_integer() else f"{line_target_val}"
+                formatted_ref_text = f" {val_str} {current_unit}".strip()
+                fig.add_hline(
+                    y=line_target_val,
+                    line_dash="solid",
+                    line_color="#DC2626",
+                    line_width=6,
+                    annotation_text=formatted_ref_text,
+                    annotation_position="bottom right",
+                    annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
+                )
 
         text_vals = [f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}" for val in y_vals]
         text_vals = [f"{v} {current_unit}".strip() for v in text_vals]
