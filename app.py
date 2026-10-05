@@ -120,7 +120,7 @@ stat_settings = db.get("settings", {}).get(selected_stat, {})
 
 period = st.sidebar.radio("Időszak bontás:", ["Napi", "Heti (Cs)", "Havi"], index=1)
 
-st.sidebar.subheader("📐 Érték Tengely")
+st.sidebar.subheader("📐 Érték Tengely & Vonalak")
 col_min, col_max, col_step = st.sidebar.columns(3)
 
 with col_min:
@@ -130,6 +130,13 @@ with col_max:
 with col_step:
     ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
 
+# Egyedi referencia vonal beviteli mezője
+ref_line_val = st.sidebar.text_input(
+    "Referencia vonal értéke (Ft):", 
+    value=stat_settings.get("ref_line", ""),
+    placeholder="Hagyd üresen az utolsó adathoz"
+)
+
 if st.sidebar.button("💾 Beállítások Mentése"):
     if "settings" not in db:
         db["settings"] = {}
@@ -137,7 +144,8 @@ if st.sidebar.button("💾 Beállítások Mentése"):
         "period": period,
         "ymin": ymin,
         "ymax": ymax,
-        "ystep": ystep
+        "ystep": ystep,
+        "ref_line": ref_line_val
     }
     save_data(db)
     st.sidebar.success("Beállítások elmentve!")
@@ -205,15 +213,25 @@ with col_right:
                 hoverinfo='skip'
             ))
 
-        # Utolsó mért érték vízszintes referencia vonala (világosabb piros: #DC2626)
-        last_val = raw_items[-1][1]
-        fig.add_hline(
-            y=last_val,
-            line_dash="dash",
-            line_color="#DC2626",
-            line_width=2,
-            opacity=0.8
-        )
+        # Referencia vonal meghatározása (Kézi beállítás VAGY utolsó adat)
+        line_target_val = None
+        if ref_line_val:
+            try:
+                line_target_val = float(ref_line_val)
+            except ValueError:
+                line_target_val = raw_items[-1][1]
+        else:
+            line_target_val = raw_items[-1][1]
+
+        # Vízszintes referencia vonal kirajzolása (világosabb piros: #DC2626)
+        if line_target_val is not None:
+            fig.add_hline(
+                y=line_target_val,
+                line_dash="dash",
+                line_color="#DC2626",
+                line_width=2,
+                opacity=0.8
+            )
 
         # Adatpontok és értékek
         x_vals = [item[0] for item in raw_items]
@@ -257,7 +275,6 @@ with col_right:
             plot_bgcolor="white",
             paper_bgcolor="white",
             margin=dict(t=100, b=60, l=70, r=40),
-            # X tengely - Halványabb, vastagabb rácsvonalak
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=18)),
                 tickmode="array",
@@ -271,7 +288,6 @@ with col_right:
                 linecolor="#000000",
                 linewidth=2
             ),
-            # Y tengely - Halványabb, vastagabb rácsvonalak
             yaxis=dict(
                 title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=18)),
                 showgrid=True,
