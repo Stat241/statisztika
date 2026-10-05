@@ -223,17 +223,17 @@ with col_right:
         else:
             line_target_val = raw_items[-1][1]
 
-        # Vízszintes szaggatott referencia vonal kirajzolása (Vastagság: 4 px)
+        # Vízszintes egybefüggő referencia vonal kirajzolása (Vastagság: 4 px, nagyobb felirattal)
         if line_target_val is not None:
             formatted_ref_text = f" {int(line_target_val):,} Ft".replace(",", " ")
             fig.add_hline(
                 y=line_target_val,
-                line_dash="dash",       # Szaggatott vonal
-                line_color="#DC2626",     # Világosabb piros
-                line_width=4,            # Vastag vonal (4px)
+                line_dash="solid",        # Egybefüggő, folytonos vonal marad
+                line_color="#DC2626",       # Világosabb piros
+                line_width=4,              # Vastag vonal (4px)
                 annotation_text=formatted_ref_text,
                 annotation_position="bottom right",
-                annotation_font=dict(size=14, color="#DC2626", family="Arial Black")
+                annotation_font=dict(size=16, color="#DC2626", family="Arial Black") # Megnövelt felirat
             )
 
         # Adatpontok és értékek
@@ -262,41 +262,41 @@ with col_right:
             marker=dict(size=10, color="#1E293B"),
             text=text_vals,
             textposition="top center",
-            textfont=dict(size=14, color="#000000", family="Arial Black"),
+            textfont=dict(size=15, color="#000000", family="Arial Black"), # Pontok feletti értékek (nagyon picit nagyobb: 15)
             showlegend=False
         ))
 
         layout_args = dict(
             title=dict(
-                text=f"<b>{selected_stat}</b><br><span style='font-size: 18px; color: #1E293B;'>Dátum: {date_range_str}</span>",
+                text=f"<b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Dátum: {date_range_str}</span>", # Alcímet is növeltem
                 x=0.5,
                 xref="paper",
                 xanchor='center',
                 yanchor='top',
-                font=dict(size=28, color="#000000")
+                font=dict(size=32, color="#000000") # Főcím nagyobbra állítva (32)
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(t=100, b=60, l=70, r=40),
+            margin=dict(t=110, b=60, l=70, r=40),
             xaxis=dict(
-                title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=18)),
+                title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=20)), # Tengely cím megnövelve (20)
                 tickmode="array",
                 tickvals=x_vals,
                 ticktext=x_formatted,
                 showgrid=True,
                 gridcolor="#F1F5F9",
                 gridwidth=2.5,
-                tickfont=dict(color="#000000", size=15, family="Arial Black"),
+                tickfont=dict(color="#000000", size=17, family="Arial Black"), # Tengely értékek megnövelve (17)
                 showline=True,
                 linecolor="#000000",
                 linewidth=2
             ),
             yaxis=dict(
-                title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=18)),
+                title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=20)), # Tengely cím megnövelve (20)
                 showgrid=True,
                 gridcolor="#F1F5F9",
                 gridwidth=2.5,
-                tickfont=dict(color="#000000", size=16, family="Arial Black"),
+                tickfont=dict(color="#000000", size=18, family="Arial Black"), # Tengely értékek megnövelve (18)
                 showline=True,
                 linecolor="#000000",
                 linewidth=2
