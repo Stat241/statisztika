@@ -205,6 +205,16 @@ with col_right:
                 hoverinfo='skip'
             ))
 
+        # Utolsó mért érték vízszintes referencia vonala (világosabb piros: #DC2626)
+        last_val = raw_items[-1][1]
+        fig.add_hline(
+            y=last_val,
+            line_dash="dash",
+            line_color="#DC2626",
+            line_width=2,
+            opacity=0.8
+        )
+
         # Adatpontok és értékek
         x_vals = [item[0] for item in raw_items]
         y_vals = [item[1] for item in raw_items]
