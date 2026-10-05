@@ -197,10 +197,18 @@ with col_right:
 
         fig = go.Figure()
 
+        # Dátumok átalakítása sorszámokká (időbélyeg / napok száma) a pontos középre helyezéshez
+        x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
+        x_numeric = [(d - x_dates[0]).total_days() if len(x_dates) > 1 else 0 for d in x_dates]
+        if len(x_numeric) == 1:
+            x_numeric = [0]
+
+        y_vals = [item[1] for item in raw_items]
+
         # Összekötő vonalak (6 px)
         for i in range(len(raw_items) - 1):
-            x1, y1 = raw_items[i][0], raw_items[i][1]
-            x2, y2 = raw_items[i+1][0], raw_items[i+1][1]
+            x1, y1 = x_numeric[i], y_vals[i]
+            x2, y2 = x_numeric[i+1], y_vals[i+1]
             
             color = "#116B3A" if y2 > y1 else "#991B1B"
             
@@ -219,43 +227,39 @@ with col_right:
             try:
                 line_target_val = float(ref_line_val)
             except ValueError:
-                line_target_val = raw_items[-1][1]
+                line_target_val = y_vals[-1]
         else:
-            line_target_val = raw_items[-1][1]
+            line_target_val = y_vals[-1]
 
-        # Vízszintes egybefüggő referencia vonal kirajzolása (Vastagság: 6 px, extra nagy felirattal)
+        # Vízszintes egybefüggő referencia vonal kirajzolása
         if line_target_val is not None:
             formatted_ref_text = f" {int(line_target_val):,} Ft".replace(",", " ")
             fig.add_hline(
                 y=line_target_val,
-                line_dash="solid",        # Egybefüggő vonal
-                line_color="#DC2626",       # Piros
-                line_width=6,              # Nagyon vastag vonal (6px)
+                line_dash="solid",
+                line_color="#DC2626",
+                line_width=6,
                 annotation_text=formatted_ref_text,
                 annotation_position="bottom right",
                 annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
             )
 
-        # ================= KÖZPÉNTI / FÚRÁSI PONT KISZÁMÍTÁSA =================
-        x_vals = [item[0] for item in raw_items]
-        y_vals = [item[1] for item in raw_items]
-        
-        # A diagram Y tengelyének határai (figyelembe véve a manuális Y min/max beállításokat is, ha vannak)
+        # ================= ABSZOLÚT KÖZPÉNTI / FÚRÁSI PONT KISZÁMÍTÁSA =================
         calc_ymin = float(ymin) if ymin else min(y_vals) * 0.9
         calc_ymax = float(ymax) if ymax else max(max(y_vals), line_target_val if line_target_val else 0) * 1.15
+        
         center_y = (calc_ymin + calc_ymax) / 2.0
-        center_x_idx = len(x_vals) // 2
-        center_x = x_vals[center_x_idx]
+        center_x = (min(x_numeric) + max(x_numeric)) / 2.0 if x_numeric else 0
 
-        # Középső jelölőpont (fúrási segédpont) kirajzolása
+        # Középső jelölőpont (fúrási segédpont) kirajzolása a pont mértani közepére
         fig.add_trace(go.Scatter(
             x=[center_x],
             y=[center_y],
             mode='markers+text',
-            marker=dict(size=14, color="#64748B", symbol="cross"), # Kereszt szimbólum a pontossághoz
-            text=["⌖ Közép / Fúrási pont"],
+            marker=dict(size=18, color="#475569", symbol="cross"),
+            text=["⌖ KÖZPONT / FÚRÁSI PONT"],
             textposition="bottom center",
-            textfont=dict(size=16, color="#475569", family="Arial Black"),
+            textfont=dict(size=16, color="#334155", family="Arial Black"),
             showlegend=False,
             hoverinfo='skip'
         ))
@@ -263,22 +267,18 @@ with col_right:
         # Adatpontok és értékek
         text_vals = [f"{int(val):,} Ft".replace(",", " ") for val in y_vals]
 
-        # Magyar dátumok
+        # Magyar dátumok a tengely felirataihoz
         hu_months = {
             1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
             5: "máj.", 6: "jún.", 7: "júl.", 8: "aug.",
             9: "szept.", 10: "okt.", 11: "nov.", 12: "dec."
         }
         x_formatted = []
-        for x in x_vals:
-            try:
-                dt = datetime.strptime(str(x), "%Y-%m-%d")
-                x_formatted.append(f"{dt.year}. {hu_months[dt.month]} {dt.day}.")
-            except Exception:
-                x_formatted.append(str(x))
+        for d in x_dates:
+            x_formatted.append(f"{d.year}. {hu_months[d.month]} {d.day}.")
 
         fig.add_trace(go.Scatter(
-            x=x_vals,
+            x=x_numeric,
             y=y_vals,
             mode='markers+text',
             marker=dict(size=15, color="#1E293B"),
@@ -303,7 +303,7 @@ with col_right:
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
                 tickmode="array",
-                tickvals=x_vals,
+                tickvals=x_numeric,
                 ticktext=x_formatted,
                 showgrid=True,
                 gridcolor="#F1F5F9",
@@ -311,7 +311,8 @@ with col_right:
                 tickfont=dict(color="#000000", size=22, family="Arial Black"),
                 showline=True,
                 linecolor="#000000",
-                linewidth=3
+                linewidth=3,
+                range=[min(x_numeric) - (max(x_numeric)*0.05 if max(x_numeric) > 0 else 1), max(x_numeric) + (max(x_numeric)*0.05 if max(x_numeric) > 0 else 1)]
             ),
             yaxis=dict(
                 title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=26)),
