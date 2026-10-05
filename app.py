@@ -241,19 +241,19 @@ with col_right:
                 annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
             )
 
-        # ================= EGYSZERŰ FEKETE PONT A LEGESLEGTETEJÉN =================
+        # ================= KISEBB FEKETE PONT A CÍM ÉS A DÁTUM ALATT, KÖZÉPEN =================
         calc_ymin = float(ymin) if ymin else min(y_vals) * 0.9
         calc_ymax = float(ymax) if ymax else max(max(y_vals), line_target_val if line_target_val else 0) * 1.15
         
         center_x = (min(x_numeric) + max(x_numeric)) / 2.0 if x_numeric else 0
-        center_y = calc_ymax * 0.985  # Pontosan a legeslegtetején
+        center_y = calc_ymax * 0.965  # Pontosan a címsor alatti területen, vízszintesen középen
 
-        # Csak egy sima fekete pont, szöveg és kereszteződés nélkül
+        # Kisebb, 8-as méretű fekete pont
         fig.add_trace(go.Scatter(
             x=[center_x],
             y=[center_y],
             mode='markers',
-            marker=dict(size=12, color="#000000"),
+            marker=dict(size=8, color="#000000"),
             showlegend=False,
             hoverinfo='skip'
         ))
