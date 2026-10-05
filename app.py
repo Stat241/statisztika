@@ -201,47 +201,61 @@ with col_right:
         y_vals = [item[1] for item in raw_items]
         text_vals = [f"{int(val):,} Ft".replace(",", " ") for val in y_vals]
 
+        # Magyar hónapnevekhez formázás a tengelyen
+        hu_months = {
+            1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
+            5: "máj.", 6: "jún.", 7: "júl.", 8: "aug.",
+            9: "szept.", 10: "okt.", 11: "nov.", 12: "dec."
+        }
+        x_formatted = []
+        for x in x_vals:
+            dt = datetime.strptime(x, "%Y-%m-%d")
+            x_formatted.append(f"{dt.year}. {hu_months[dt.month]} {dt.day}.")
+
         fig.add_trace(go.Scatter(
             x=x_vals,
             y=y_vals,
             mode='markers+text',
-            marker=dict(size=9, color="#1E293B"),
+            marker=dict(size=10, color="#1E293B"),
             text=text_vals,
             textposition="top center",
-            textfont=dict(size=12, color="#000000", family="Arial Black"),
+            textfont=dict(size=14, color="#000000", family="Arial Black"),
             showlegend=False
         ))
 
         layout_args = dict(
             title=dict(
-                text=f"<b>{selected_stat}</b><br><span style='font-size: 16px; color: #1E293B;'>Dátum: {date_range_str}</span>",
+                text=f"<b>{selected_stat}</b><br><span style='font-size: 18px; color: #1E293B;'>Dátum: {date_range_str}</span>",
                 x=0.5,
                 xref="paper",
                 xanchor='center',
                 yanchor='top',
-                font=dict(size=26, color="#000000")
+                font=dict(size=28, color="#000000")
             ),
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(t=90, b=40, l=50, r=40),
-            # X tengely (Dátumok)
+            margin=dict(t=100, b=60, l=70, r=40),
+            # X tengely (Dátumok) - Magyar formátum és nagy betűk
             xaxis=dict(
-                title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=14)),
+                title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=18)),
+                tickmode="array",
+                tickvals=x_vals,
+                ticktext=x_formatted,
                 showgrid=True,
                 gridcolor="#94A3B8",
                 gridwidth=1.5,
-                tickfont=dict(color="#000000", size=12, family="Arial Black"),
+                tickfont=dict(color="#000000", size=15, family="Arial Black"),
                 showline=True,
                 linecolor="#000000",
                 linewidth=2
             ),
-            # Y tengely (Értékek)
+            # Y tengely (Értékek) - Nagyobb számok
             yaxis=dict(
-                title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=14)),
+                title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=18)),
                 showgrid=True,
                 gridcolor="#94A3B8",
                 gridwidth=1.5,
-                tickfont=dict(color="#000000", size=12, family="Arial Black"),
+                tickfont=dict(color="#000000", size=16, family="Arial Black"),
                 showline=True,
                 linecolor="#000000",
                 linewidth=2
