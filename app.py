@@ -7,7 +7,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
-# ================= NYOMTATÁSI CSS (Élesítés és felesleges elemek elrejtése) =================
+# ================= NYOMTATÁSI CSS =================
 st.markdown("""
     <style>
     @media print {
@@ -60,8 +60,11 @@ DB_FILE = "statisztikak.json"
 
 def load_data():
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
     return {
         "data": {
             "Bruttó Beérkezett Bevétel (Ft)": [
@@ -97,7 +100,11 @@ if st.sidebar.button("🚪 Kijelentkezés"):
 
 st.sidebar.markdown("---")
 
-stat_names = list(db["data"].keys())
+stat_names = list(db.get("data", {}).keys())
+if not stat_names:
+    db["data"] = {"Bruttó Beérkezett Bevétel (Ft)": []}
+    stat_names = list(db["data"].keys())
+
 selected_stat = st.sidebar.selectbox("Válassz Statisztikát:", stat_names)
 
 with st.sidebar.expander("➕ Új statisztika létrehozása"):
@@ -168,23 +175,24 @@ with col_left:
 # JOBB OLDAL: Interaktív Grafikon
 with col_right:
     if selected_stat in db["data"] and db["data"][selected_stat]:
-        raw_items = sorted(db["data"][selected_stat], key=lambda x: x[0])
+        raw_items = sorted(db["data"][selected_stat], key=lambda x: str(x[0]))
         
         # Kezdő és záró dátum kiszámítása
+        date_range_str = ""
         if len(raw_items) > 0:
-            start_d = datetime.strptime(raw_items[0][0], "%Y-%m-%d").strftime("%Y.%m.%d.")
-            end_d = datetime.strptime(raw_items[-1][0], "%Y-%m-%d").strftime("%Y.%m.%d.")
-            date_range_str = f"({start_d} - {end_d})"
-        else:
-            date_range_str = ""
+            try:
+                start_d = datetime.strptime(raw_items[0][0], "%Y-%m-%d").strftime("%Y.%m.%d.")
+                end_d = datetime.strptime(raw_items[-1][0], "%Y-%m-%d").strftime("%Y.%m.%d.")
+                date_range_str = f"({start_d} - {end_d})"
+            except Exception:
+                date_range_str = f"({raw_items[0][0]} - {raw_items[-1][0]})"
 
         fig = go.Figure()
 
-        # Zöld / Piros összekötő vonalak
+        # Összekötő vonalak
         for i in range(len(raw_items) - 1):
             x1, y1 = raw_items[i][0], raw_items[i][1]
             x2, y2 = raw_items[i+1][0], raw_items[i+1][1]
-            
             color = "#116B3A" if y2 >= y1 else "#991B1B"
             
             fig.add_trace(go.Scatter(
@@ -196,12 +204,12 @@ with col_right:
                 hoverinfo='skip'
             ))
 
-        # Adatpontok és az értékek kiírása a pontok felé
+        # Adatpontok és értékek
         x_vals = [item[0] for item in raw_items]
         y_vals = [item[1] for item in raw_items]
         text_vals = [f"{int(val):,} Ft".replace(",", " ") for val in y_vals]
 
-        # Magyar hónapnevekhez formázás a tengelyen
+        # Magyar dátumok
         hu_months = {
             1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
             5: "máj.", 6: "jún.", 7: "júl.", 8: "aug.",
@@ -209,8 +217,11 @@ with col_right:
         }
         x_formatted = []
         for x in x_vals:
-            dt = datetime.strptime(x, "%Y-%m-%d")
-            x_formatted.append(f"{dt.year}. {hu_months[dt.month]} {dt.day}.")
+            try:
+                dt = datetime.strptime(str(x), "%Y-%m-%d")
+                x_formatted.append(f"{dt.year}. {hu_months[dt.month]} {dt.day}.")
+            except Exception:
+                x_formatted.append(str(x))
 
         fig.add_trace(go.Scatter(
             x=x_vals,
@@ -235,7 +246,6 @@ with col_right:
             plot_bgcolor="white",
             paper_bgcolor="white",
             margin=dict(t=100, b=60, l=70, r=40),
-            # X tengely (Dátumok) - Magyar formátum és nagy betűk
             xaxis=dict(
                 title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=18)),
                 tickmode="array",
@@ -249,7 +259,6 @@ with col_right:
                 linecolor="#000000",
                 linewidth=2
             ),
-            # Y tengely (Értékek) - Nagyobb számok
             yaxis=dict(
                 title=dict(text="<b>Érték (Ft)</b>", font=dict(color="#000000", size=18)),
                 showgrid=True,
@@ -267,7 +276,7 @@ with col_right:
                 layout_args["yaxis"]["range"] = [float(ymin), float(ymax)]
             if ystep:
                 layout_args["yaxis"]["dtick"] = float(ystep)
-        except ValueError:
+        except Exception:
             pass
 
         fig.update_layout(**layout_args)
