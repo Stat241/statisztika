@@ -7,6 +7,31 @@ from datetime import datetime
 
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
+# ================= NYOMTATÁSI CSS (Élesítés és felesleges elemek elrejtése) =================
+st.markdown("""
+    <style>
+    @media print {
+        /* Oldalsáv és beviteli mezők elrejtése nyomtatáskor */
+        [data-testid="stSidebar"], 
+        .stForm, 
+        button, 
+        [data-testid="stHeader"] {
+            display: none !important;
+        }
+        /* Munkaterület teljes szélességűre állítása */
+        .main .block-container {
+            padding: 0 !important;
+            max-width: 100% !important;
+        }
+        /* Grafikon élesítése nyomtatáshoz */
+        .js-plotly-plot .plotly .main-svg {
+            shape-rendering: geometricPrecision !important;
+            text-rendering: geometricPrecision !important;
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # ================= JELSZÓ BEÁLLÍTÁSA =================
 SITE_PASSWORD = "titkosjelszo2026"
 
@@ -148,7 +173,7 @@ with col_right:
     if selected_stat in db["data"] and db["data"][selected_stat]:
         raw_items = sorted(db["data"][selected_stat], key=lambda x: x[0])
         
-        # Kezdő és záró dátum kiszámítása az adatokból
+        # Kezdő és záró dátum kiszámítása
         if len(raw_items) > 0:
             start_d = datetime.strptime(raw_items[0][0], "%Y-%m-%d").strftime("%Y.%m.%d.")
             end_d = datetime.strptime(raw_items[-1][0], "%Y-%m-%d").strftime("%Y.%m.%d.")
@@ -198,4 +223,17 @@ with col_right:
             pass
 
         fig.update_layout(**layout_args)
-        st.plotly_chart(fig, use_container_width=True)
+
+        # Plotly beállítások nyomtatáshoz és letöltéshez (PNG export gomb élesítése)
+        config = {
+            'toImageButtonOptions': {
+                'format': 'png',
+                'filename': f'{selected_stat}_grafikon',
+                'height': 1200,
+                'width': 1800,
+                'scale': 3 # 3x-os nagyítás / kristálytiszta Ultra HD felbontás
+            },
+            'displayModeBar': True
+        }
+
+        st.plotly_chart(fig, use_container_width=True, config=config)
