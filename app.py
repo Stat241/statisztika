@@ -217,7 +217,7 @@ if "*" in allowed_stat_names:
                 st.warning("Add meg a nevet és a jelszót!")
 
         st.markdown("---")
-        st.write("### ✏️️ Felhasználó módosítása")
+        st.write("### ✏ Felhasználó módosítása")
         edit_user_name = st.selectbox("Válassz szerkesztendő felhasználót:", options=list(USERS.keys()), key="edit_u_select")
         
         if edit_user_name:
@@ -568,5 +568,4 @@ with col_right:
             }
 
             st.plotly_chart(fig, use_container_width=True, config=config)
-
-
+EOF
