@@ -316,7 +316,7 @@ if enable_accumulated:
     accumulated_start_val = st.sidebar.number_input("Kezdő érték:", value=0.0, step=1.0)
 
 # --- DÁTUM SZŰRÉS ---
-st.sidebar.subheader("🗓️️ Dátum szerinti szűrés")
+st.sidebar.subheader("🗓 Dátum szerinti szűrés")
 enable_date_filter = st.sidebar.checkbox("Időszak szűkítése", value=False)
 
 start_date_filter, end_date_filter = None, None
@@ -493,12 +493,12 @@ with col_right:
             
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
             
-            # Dátumok normál, egy soros megjelenítése alul
+            # Dátumok egy soros megjelenítése
             x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
 
-            text_positions = ["middle right"] + ["top center"] * (len(x_numeric) - 1)
+            text_positions = ["middle right"] * len(x_numeric)
 
-            # Értékek feliratainak elhelyezése a számok mellett (textangle eltávolítva)
+            # Értékek feliratainak elhelyezése teljesen függőlegesen (textangle=-90), alulról felfelé olvashatóan
             fig.add_trace(go.Scatter(
                 x=x_numeric,
                 y=y_vals,
@@ -506,6 +506,7 @@ with col_right:
                 marker=dict(size=14, color="#1E293B"),
                 text=formatted_texts,
                 textposition=text_positions,
+                textangle=-90,
                 textfont=dict(size=15, color="#000000", family="Arial Black"),
                 showlegend=False
             ))
@@ -521,12 +522,13 @@ with col_right:
                 ),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
-                margin=dict(t=150, b=100, l=80, r=80),
+                margin=dict(t=150, b=150, l=80, r=80),
                 xaxis=dict(
                     title=dict(text="", font=dict(color="#000000", size=1)), 
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
+                    tickangle=-90,  # <-- Dátumok teljesen függőlegesre állítva
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
@@ -564,7 +566,7 @@ with col_right:
                     'filename': f'{selected_stat}_grafikon',
                     'height': 1200,
                     'width': 1800,
-                    'scale': 3
+                    * # scale: 3
                 },
                 'displayModeBar': True
             }
