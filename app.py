@@ -361,7 +361,7 @@ if st.sidebar.button("💾 Beállítások Mentése"):
 
 col_left, col_right = st.columns([1, 2])
 
-# BAL OLDAL: Adatbevitel és Táblázat
+# BAL OLDAL: Adatbevitel és Táblázat (Fordított sorrend: legfrissebb felül)
 with col_left:
     st.subheader(f"➕ Új adat hozzáadása ({selected_stat})")
     with st.form("add_data_form", clear_on_submit=True):
@@ -391,7 +391,8 @@ with col_left:
 
         df = pd.DataFrame(filtered_items, columns=["Dátum", f"Érték ({current_unit})"])
         if not df.empty:
-            df = df.sort_values(by="Dátum")
+            # Fordított sorrend a táblázatban (legfrissebb / legnagyobb dátum elöl)
+            df = df.sort_values(by="Dátum", ascending=False)
             st.dataframe(df, use_container_width=True)
 
         delete_idx = st.number_input("Törlendő sor száma (index):", min_value=0, max_value=len(df)-1 if len(df) > 0 else 0, step=1)
@@ -402,7 +403,7 @@ with col_left:
                 save_data(db)
                 st.rerun()
 
-# JOBB OLDAL: Interaktív Grafikon
+# JOBB OLDAL: Interaktív Grafikon (A grafikonon maradt a normál időrend a vonalvezetés miatt)
 with col_right:
     stat_data_list = db["stats"][selected_stat]["data"]
     if stat_data_list:
