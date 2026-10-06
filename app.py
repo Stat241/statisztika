@@ -420,8 +420,8 @@ with col_right:
         date_range_str = ""
         if len(raw_items) > 0:
             try:
-                start_d = datetime.strptime(raw_items[0][0], "%Y-%m-%d").strftime("%Y.%m.%d.")
-                end_d = datetime.strptime(raw_items[-1][0], "%Y-%m-%d").strftime("%Y.%m.%d.")
+                start_d = datetime.strptime(raw_items[0][0], "%Y-%m-%d").strftime("%Y. %B %d.")
+                end_d = datetime.strptime(raw_items[-1][0], "%Y-%m-%d").strftime("%Y. %B %d.")
                 date_range_str = f"({start_d} - {end_d})"
             except Exception:
                 date_range_str = f"({raw_items[0][0]} - {raw_items[-1][0]})"
@@ -470,19 +470,18 @@ with col_right:
                         annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
                     )
 
-            # Értékek és akkumulált értékek függőleges tördelése (soronként egymás alá)
+            # Értékek és akkumulált értékek függőleges tördelése (egymás alá soronként)
             formatted_texts = []
             running_acc = accumulated_start_val
             for val in y_vals:
                 v_str = f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}"
                 
-                # Érték és mértékegység függőlegesen egymás alá (pl. 4 722 200 \n Ft)
+                # Érték és mértékegység tökéletesen függőlegesen egymás alatt
                 base_text = f"{v_str}<br>{current_unit}" if current_unit else f"{v_str}"
                 
                 if enable_accumulated:
                     running_acc += val
                     acc_str = f"{int(running_acc):,}".replace(",", " ") if running_acc.is_integer() else f"{running_acc}"
-                    # Zárójeles akkumulált rész is függőlegesen alatta (pl. \n (5 000 000 \n Ft))
                     base_text += f"<br>({acc_str}"
                     if current_unit:
                         base_text += f"<br>{current_unit})"
@@ -491,16 +490,17 @@ with col_right:
                 
                 formatted_texts.append(base_text)
 
-            hu_months = {
-                1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
-                5: "máj.", 6: "jún.", 7: "júl.", 8: "aug.",
-                9: "szept.", 10: "okt.", 11: "nov.", 12: "dec."
+            # Magyar teljes hónapnevek
+            hu_months_full = {
+                1: "Január", 2: "Február", 3: "Március", 4: "Április",
+                5: "Május", 6: "Június", 7: "Július", 8: "Augusztus",
+                9: "Szeptember", 10: "Október", 11: "November", 12: "December"
             }
             
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
             
-            # Dátumok teljesen függőlegesen (év, hónap, nap külön sorban)
-            x_formatted = [f"{d.year}.<br>{hu_months[d.month]}<br>{d.day}." for d in x_dates]
+            # Dátumok teljesen függőlegesen: Év. / Teljes Hónap Név / Nap. külön sorokban egy vonalban
+            x_formatted = [f"{d.year}.<br>{hu_months_full[d.month]}<br>{d.day}." for d in x_dates]
 
             text_positions = ["middle right"] + ["top center"] * (len(x_numeric) - 1)
 
@@ -517,7 +517,7 @@ with col_right:
 
             layout_args = dict(
                 title=dict(
-                    text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Dátum: {date_range_str}</span>",
+                    text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
                     x=0.5,
                     xref="paper",
                     xanchor='center',
@@ -526,7 +526,7 @@ with col_right:
                 ),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
-                margin=dict(t=150, b=120, l=80, r=80),
+                margin=dict(t=150, b=140, l=80, r=80),
                 xaxis=dict(
                     title=dict(text="", font=dict(color="#000000", size=1)), 
                     tickmode="array",
@@ -535,7 +535,7 @@ with col_right:
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=16, family="Arial Black"),
+                    tickfont=dict(color="#000000", size=15, family="Arial Black"),
                     showline=True,
                     linecolor="#000000",
                     linewidth=3,
