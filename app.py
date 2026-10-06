@@ -391,7 +391,6 @@ with col_left:
 
         df = pd.DataFrame(filtered_items, columns=["Dátum", f"Érték ({current_unit})"])
         if not df.empty:
-            # Fordított sorrend a táblázatban (legfrissebb dátum elöl)
             df = df.sort_values(by="Dátum", ascending=False)
             st.dataframe(df, use_container_width=True)
 
@@ -403,7 +402,7 @@ with col_left:
                 save_data(db)
                 st.rerun()
 
-# JOBB OLDAL: Interaktív Grafikon (Fordított sorrend: legfrissebb dátum elöl/balra)
+# JOBB OLDAL: Interaktív Grafikon (Régi balra, de a dátum formátum: Év felül/elöl)
 with col_right:
     stat_data_list = db["stats"][selected_stat]["data"]
     if stat_data_list:
@@ -416,18 +415,17 @@ with col_right:
             else:
                 raw_items.append(item)
 
-        # Fordított időrendbe rendezés, hogy a legfrissebb dátum legyen elöl (bal oldalon)
-        raw_items = sorted(raw_items, key=lambda x: str(x[0]), reverse=True)
+        # Időrendi sorrend: legrégebbi bal oldalt (növekvő)
+        raw_items = sorted(raw_items, key=lambda x: str(x[0]))
         
         date_range_str = ""
         if len(raw_items) > 0:
             try:
-                # Mivel csökkenő sorrendben van, az utolsó elem a legrégebbi, az első a legfrissebb
-                start_d = datetime.strptime(raw_items[-1][0], "%Y-%m-%d").strftime("%Y. %B %d.")
-                end_d = datetime.strptime(raw_items[0][0], "%Y-%m-%d").strftime("%Y. %B %d.")
+                start_d = datetime.strptime(raw_items[0][0], "%Y-%m-%d").strftime("%Y. %B %d.")
+                end_d = datetime.strptime(raw_items[-1][0], "%Y-%m-%d").strftime("%Y. %B %d.")
                 date_range_str = f"({start_d} - {end_d})"
             except Exception:
-                date_range_str = f"({raw_items[-1][0]} - {raw_items[0][0]})"
+                date_range_str = f"({raw_items[0][0]} - {raw_items[-1][0]})"
 
         fig = go.Figure()
 
@@ -439,9 +437,7 @@ with col_right:
                 x1, y1 = x_numeric[i], y_vals[i]
                 x2, y2 = x_numeric[i+1], y_vals[i+1]
                 
-                # Figyelem: mivel fordítva haladunk az időben (friss -> régi), 
-                # a színt a helyes irányhoz igazítjuk (ha az x2 nagyobb értékű volt, de most balra van)
-                color = "#00C853" if y1 > y2 else "#FF1744"
+                color = "#00C853" if y2 > y1 else "#FF1744"
                 
                 fig.add_trace(go.Scatter(
                     x=[x1, x2],
@@ -458,9 +454,9 @@ with col_right:
                     try:
                         line_target_val = float(ref_line_val)
                     except ValueError:
-                        line_target_val = y_vals[0] # A legfrissebb érték (mivel elöl van)
+                        line_target_val = y_vals[-1]
                 else:
-                    line_target_val = y_vals[0]
+                    line_target_val = y_vals[-1]
 
                 if line_target_val is not None:
                     val_str = f"{int(line_target_val):,}".replace(",", " ") if line_target_val.is_integer() else f"{line_target_val}"
@@ -494,8 +490,9 @@ with col_right:
                 9: "Szeptember", 10: "Október", 11: "November", 12: "December"
             }
             
+            # ITT MÓDOSÍTVA: Az évszám (2026) kerül előre, a HTML sortöréssel (<br>) pedig felülre igazítható
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
-            x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
+            x_formatted = [f"<b>{d.year}</b><br>{hu_months_full[d.month]} {d.day}." for d in x_dates]
 
             fig.add_trace(go.Scatter(
                 x=x_numeric,
@@ -525,11 +522,11 @@ with col_right:
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
-                    tickangle=-90,
+                    tickangle=0,  # Vízszintes vagy igazított megjelenítés, hogy a sortörés (<br>) érvényesüljön
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=15, family="Arial Black"),
+                    tickfont=dict(color="#000000", size=14, family="Arial Black"),
                     showline=True,
                     linecolor="#000000",
                     linewidth=3,
