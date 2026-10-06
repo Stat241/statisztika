@@ -432,11 +432,12 @@ with col_right:
             x_numeric = list(range(len(raw_items)))
             y_vals = [item[1] for item in raw_items]
 
+            # Élénkebb színek a vonalakhoz (#00C853 zöld, #FF1744 piros)
             for i in range(len(raw_items) - 1):
                 x1, y1 = x_numeric[i], y_vals[i]
                 x2, y2 = x_numeric[i+1], y_vals[i+1]
                 
-                color = "#116B3A" if y2 > y1 else "#991B1B"
+                color = "#00C853" if y2 > y1 else "#FF1744"
                 
                 fig.add_trace(go.Scatter(
                     x=[x1, x2],
@@ -463,34 +464,27 @@ with col_right:
                     fig.add_hline(
                         y=line_target_val,
                         line_dash="solid",
-                        line_color="#DC2626",
+                        line_color="#FF1744",
                         line_width=6,
                         annotation_text=formatted_ref_text,
                         annotation_position="bottom right",
-                        annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
+                        annotation_font=dict(size=21, color="#FF1744", family="Arial Black")
                     )
 
-            # Értékek és akkumulált értékek függőleges tördelése (egymás alá soronként)
+            # Értékek és akkumulált értékek
             formatted_texts = []
             running_acc = accumulated_start_val
             for val in y_vals:
                 v_str = f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}"
-                
-                # Érték és mértékegység tökéletesen függőlegesen egymás alatt
-                base_text = f"{v_str}<br>{current_unit}" if current_unit else f"{v_str}"
+                base_text = f"{v_str} {current_unit}".strip()
                 
                 if enable_accumulated:
                     running_acc += val
                     acc_str = f"{int(running_acc):,}".replace(",", " ") if running_acc.is_integer() else f"{running_acc}"
-                    base_text += f"<br>({acc_str}"
-                    if current_unit:
-                        base_text += f"<br>{current_unit})"
-                    else:
-                        base_text += ")"
+                    base_text += f" ({acc_str} {current_unit})".strip()
                 
                 formatted_texts.append(base_text)
 
-            # Magyar teljes hónapnevek
             hu_months_full = {
                 1: "Január", 2: "Február", 3: "Március", 4: "Április",
                 5: "Május", 6: "Június", 7: "Július", 8: "Augusztus",
@@ -499,18 +493,20 @@ with col_right:
             
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
             
-            # Dátumok teljesen függőlegesen: Év. / Teljes Hónap Név / Nap. külön sorokban egy vonalban
-            x_formatted = [f"{d.year}.<br>{hu_months_full[d.month]}<br>{d.day}." for d in x_dates]
+            # Dátumok normál, egy soros megjelenítése alul (pl. 2026. Október 10.)
+            x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.d}." if hasattr(d, 'd') else f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
 
             text_positions = ["middle right"] + ["top center"] * (len(x_numeric) - 1)
 
+            # Értékek feliratainak elhelyezése a számok mellett, alulról felfelé olvashatóan (textangle=-90)
             fig.add_trace(go.Scatter(
                 x=x_numeric,
                 y=y_vals,
                 mode='markers+text',
-                marker=dict(size=15, color="#1E293B"),
+                marker=dict(size=14, color="#1E293B"),
                 text=formatted_texts,
                 textposition=text_positions,
+                textangle=-90,
                 textfont=dict(size=15, color="#000000", family="Arial Black"),
                 showlegend=False
             ))
@@ -526,7 +522,7 @@ with col_right:
                 ),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
-                margin=dict(t=150, b=140, l=80, r=80),
+                margin=dict(t=150, b=100, l=80, r=80),
                 xaxis=dict(
                     title=dict(text="", font=dict(color="#000000", size=1)), 
                     tickmode="array",
@@ -539,14 +535,14 @@ with col_right:
                     showline=True,
                     linecolor="#000000",
                     linewidth=3,
-                    range=[0, len(x_numeric) - 0.7]
+                    range=[-0.5, len(x_numeric) - 0.5]
                 ),
                 yaxis=dict(
                     title=dict(text="", font=dict(color="#000000", size=1)), 
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=22, family="Arial Black"),
+                    tickfont=dict(color="#000000", size=18, family="Arial Black"),
                     showline=True,
                     linecolor="#000000",
                     linewidth=3
