@@ -402,7 +402,7 @@ with col_left:
                 save_data(db)
                 st.rerun()
 
-# JOBB OLDAL: Interaktív Grafikon (Régi balra, helyes dátum sorrend: Év elöl, nap a vonalnál)
+# JOBB OLDAL: Interaktív Grafikon (Hónap és nap elöl, az évszám hátul a tengelynél)
 with col_right:
     stat_data_list = db["stats"][selected_stat]["data"]
     if stat_data_list:
@@ -490,9 +490,9 @@ with col_right:
                 9: "Szeptember", 10: "Október", 11: "November", 12: "December"
             }
             
-            # ITT A JAVÍTOTT FORMÁTUM: Évszám elöl, majd hónap és nap (hogy az év legyen felül, a nap pedig alul a tengelynél)
+            # MÓDOSÍTVA: Hónap és nap van elöl, az évszám pedig a végén (a tengelynél)
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
-            x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
+            x_formatted = [f"{hu_months_full[d.month]} {d.day}. {d.year}." for d in x_dates]
 
             fig.add_trace(go.Scatter(
                 x=x_numeric,
