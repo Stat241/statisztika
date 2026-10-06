@@ -492,17 +492,14 @@ with col_right:
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
             x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
 
-            text_positions = ["middle right"] * len(x_numeric)
-
             fig.add_trace(go.Scatter(
                 x=x_numeric,
                 y=y_vals,
                 mode='markers+text',
                 marker=dict(size=14, color="#1E293B"),
                 text=formatted_texts,
-                textposition=text_positions,
-                textangle=-90,
-                textfont=dict(size=15, color="#000000", family="Arial Black"),
+                textposition="top center",
+                textfont=dict(size=14, color="#000000", family="Arial Black"),
                 showlegend=False
             ))
 
@@ -523,47 +520,3 @@ with col_right:
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
-                    tickangle=-90,
-                    showgrid=True,
-                    gridcolor="#F1F5F9",
-                    gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=15, family="Arial Black"),
-                    showline=True,
-                    linecolor="#000000",
-                    linewidth=3,
-                    range=[-0.5, len(x_numeric) - 0.5]
-                ),
-                yaxis=dict(
-                    title=dict(text="", font=dict(color="#000000", size=1)), 
-                    showgrid=True,
-                    gridcolor="#F1F5F9",
-                    gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=18, family="Arial Black"),
-                    showline=True,
-                    linecolor="#000000",
-                    linewidth=3
-                )
-            )
-
-            try:
-                if ymin and ymax:
-                    layout_args["yaxis"]["range"] = [float(ymin), float(ymax)]
-                if ystep:
-                    layout_args["yaxis"]["dtick"] = float(ystep)
-            except Exception:
-                pass
-
-            fig.update_layout(**layout_args)
-
-            config = {
-                'toImageButtonOptions': {
-                    'format': 'png',
-                    'filename': f'{selected_stat}_grafikon',
-                    'height': 1200,
-                    'width': 1800,
-                    'scale': 3
-                },
-                'displayModeBar': True
-            }
-
-            st.plotly_chart(fig, use_container_width=True, config=config)
