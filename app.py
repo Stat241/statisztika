@@ -402,7 +402,7 @@ with col_left:
                 save_data(db)
                 st.rerun()
 
-# JOBB OLDAL: Interaktív Grafikon (Hónap és nap elöl, az évszám hátul a tengelynél)
+# JOBB OLDAL: Interaktív Grafikon (Év legfelül, alatta hónap és nap, helyes olvasási iránnyal)
 with col_right:
     stat_data_list = db["stats"][selected_stat]["data"]
     if stat_data_list:
@@ -490,9 +490,9 @@ with col_right:
                 9: "Szeptember", 10: "Október", 11: "November", 12: "December"
             }
             
-            # MÓDOSÍTVA: Hónap és nap van elöl, az évszám pedig a végén (a tengelynél)
+            # ÉV LEGELSŐKÉNT (felül), alatta a hónap és a nap
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
-            x_formatted = [f"{hu_months_full[d.month]} {d.day}. {d.year}." for d in x_dates]
+            x_formatted = [f"{d.year}.<br>{hu_months_full[d.month]} {d.day}." for d in x_dates]
 
             fig.add_trace(go.Scatter(
                 x=x_numeric,
@@ -522,7 +522,7 @@ with col_right:
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
-                    tickangle=-90,  # Függőleges elrendezés
+                    tickangle=90,  # Pozitív 90 fok: felülről lefelé olvasható irány
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
