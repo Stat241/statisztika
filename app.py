@@ -402,7 +402,7 @@ with col_left:
                 save_data(db)
                 st.rerun()
 
-# JOBB OLDAL: Interaktív Grafikon (Régi balra, de a dátum formátum: Év felül/elöl)
+# JOBB OLDAL: Interaktív Grafikon (Régi balra, függőleges dátum: 2026 elöl)
 with col_right:
     stat_data_list = db["stats"][selected_stat]["data"]
     if stat_data_list:
@@ -490,9 +490,9 @@ with col_right:
                 9: "Szeptember", 10: "Október", 11: "November", 12: "December"
             }
             
-            # ITT MÓDOSÍTVA: Az évszám (2026) kerül előre, a HTML sortöréssel (<br>) pedig felülre igazítható
+            # ITT MÓDOSÍTVA: Évszám elöl, majd hónap és nap, függőleges (-90 fokos) elrendezéssel
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
-            x_formatted = [f"<b>{d.year}</b><br>{hu_months_full[d.month]} {d.day}." for d in x_dates]
+            x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
 
             fig.add_trace(go.Scatter(
                 x=x_numeric,
@@ -522,11 +522,11 @@ with col_right:
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
-                    tickangle=0,  # Vízszintes vagy igazított megjelenítés, hogy a sortörés (<br>) érvényesüljön
+                    tickangle=-90,  # Visszaállítva a függőleges (stílusos, áttekinthető) dőlésre
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=14, family="Arial Black"),
+                    tickfont=dict(color="#000000", size=15, family="Arial Black"),
                     showline=True,
                     linecolor="#000000",
                     linewidth=3,
