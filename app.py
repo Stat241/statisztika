@@ -402,7 +402,7 @@ with col_left:
                 save_data(db)
                 st.rerun()
 
-# JOBB OLDAL: Interaktív Grafikon (Régi balra, függőleges dátum: 2026 elöl)
+# JOBB OLDAL: Interaktív Grafikon (Régi balra, helyes dátum sorrend: Év elöl, nap a vonalnál)
 with col_right:
     stat_data_list = db["stats"][selected_stat]["data"]
     if stat_data_list:
@@ -490,7 +490,7 @@ with col_right:
                 9: "Szeptember", 10: "Október", 11: "November", 12: "December"
             }
             
-            # ITT MÓDOSÍTVA: Évszám elöl, majd hónap és nap, függőleges (-90 fokos) elrendezéssel
+            # ITT A JAVÍTOTT FORMÁTUM: Évszám elöl, majd hónap és nap (hogy az év legyen felül, a nap pedig alul a tengelynél)
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
             x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
 
@@ -522,7 +522,7 @@ with col_right:
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
-                    tickangle=-90,  # Visszaállítva a függőleges (stílusos, áttekinthető) dőlésre
+                    tickangle=-90,  # Függőleges elrendezés
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
