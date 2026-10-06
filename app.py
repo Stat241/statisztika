@@ -39,7 +39,6 @@ def load_users():
                 return json.load(f)
         except Exception:
             pass
-    # Alapértelmezett admin, ha még nincs fájl
     default_users = {
         "admin": {
             "password": "titkosjelszo2026",
@@ -158,7 +157,6 @@ if "stats" not in db:
         db["stats"][k] = {"unit": "Ft", "data": v}
     save_data(db)
 
-# Friss aktuális felhasználói adatok lekérése a fájlból
 USERS = load_users()
 current_user_info = USERS.get(st.session_state.current_user, {"allowed_stats": []})
 allowed_stat_names = current_user_info["allowed_stats"]
@@ -170,7 +168,6 @@ if "*" in allowed_stat_names:
 else:
     stat_names = [s for s in all_stat_names if s in allowed_stat_names]
 
-# Ha a felhasználónak egyetlen statisztikája sincs engedélyezve
 if not stat_names:
     st.warning("⚠️ Ehhez a felhasználóhoz nincs hozzárendelve látható statisztika.")
     if st.sidebar.button("🚪 Kijelentkezés"):
@@ -190,11 +187,9 @@ if st.sidebar.button("🚪 Kijelentkezés"):
 
 st.sidebar.markdown("---")
 
-# --- ADMIN FELÜLET: Felhasználók létrehozása, MÓDOSÍTÁSA és törlése (Csak adminnak látszik) ---
+# --- ADMIN FELÜLET ---
 if "*" in allowed_stat_names:
     with st.sidebar.expander("👥 Felhasználók & Jogosultságok"):
-        
-        # 1. ÚJ FELHASZNÁLÓ
         st.write("### ➕ Új felhasználó felvétele")
         new_u_name = st.text_input("Új felhasználónév:", key="new_u_name")
         new_u_pass = st.text_input("Jelszó:", type="password", key="new_u_pass")
@@ -221,8 +216,6 @@ if "*" in allowed_stat_names:
                 st.warning("Add meg a nevet és a jelszót!")
 
         st.markdown("---")
-
-        # 2. MEGLÉVŐ FELHASZNÁLÓ MÓDOSÍTÁSA
         st.write("### ✏️ Felhasználó módosítása")
         edit_user_name = st.selectbox("Válassz szerkesztendő felhasználót:", options=list(USERS.keys()), key="edit_u_select")
         
@@ -231,10 +224,8 @@ if "*" in allowed_stat_names:
             is_currently_admin = "*" in current_u_data["allowed_stats"]
             
             edit_is_admin = st.checkbox("Teljes admin jog (*)", value=is_currently_admin, key="edit_u_is_admin")
-            
             default_selected_stats = [] if is_currently_admin else [s for s in current_u_data["allowed_stats"] if s in available_stats_for_assign]
             edit_assigned_stats = st.multiselect("Elérhető statisztikák:", options=available_stats_for_assign, default=default_selected_stats, key="edit_u_multiselect")
-            
             edit_new_pass = st.text_input("Új jelszó (ha üresen hagyod, marad a régi):", type="password", key="edit_u_pass")
 
             if st.button("Módosítások mentése"):
@@ -251,10 +242,8 @@ if "*" in allowed_stat_names:
                 st.rerun()
 
         st.markdown("---")
-
-        # 3. FELHASZNÁLÓ TÖRLÉSE
         st.write("### 🗑️ Felhasználó törlése")
-        users_to_delete = [u for u in USERS.keys() if u != st.session_state.current_user] # Magát ne tudja törölni
+        users_to_delete = [u for u in USERS.keys() if u != st.session_state.current_user]
         if users_to_delete:
             selected_user_to_del = st.selectbox("Válassz törlendő felhasználót:", options=users_to_delete, key="del_u_select")
             if st.button("🔴 Felhasználó Törlése"):
@@ -268,7 +257,6 @@ if "*" in allowed_stat_names:
 
         st.markdown("---")
 
-# --- Lenyíló rész a régi / archív statisztikák kiválasztásához ---
 with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
     archive_db = load_archive()
     if "*" in allowed_stat_names:
@@ -308,7 +296,6 @@ with st.sidebar.expander("➕ Új statisztika létrehozása"):
             else:
                 st.warning("Ilyen nevű statisztika már létezik!")
 
-# --- ARCHIVÁLÓ GOMB ---
 st.sidebar.markdown("---")
 if st.sidebar.button("📦 Jelenlegi statisztika archiválása"):
     archive_db = load_archive()
@@ -321,7 +308,14 @@ stat_settings = db.get("settings", {}).get(selected_stat, {})
 
 period = st.sidebar.radio("Időszak bontás:", ["Napi", "Heti (Cs)", "Havi"], index=1)
 
-# --- DÁTUM SZŰRÉS (Időszakra szűrés) ---
+# --- AKKUMULÁLT ÉRTÉK BEÁLLÍTÁSOK ---
+st.sidebar.subheader("📈 Akkumulált értékek")
+enable_accumulated = st.sidebar.checkbox("Akkumulált érték számítása", value=False)
+accumulated_start_val = 0.0
+if enable_accumulated:
+    accumulated_start_val = st.sidebar.number_input("Kezdő érték:", value=0.0, step=1.0)
+
+# --- DÁTUM SZŰRÉS ---
 st.sidebar.subheader("🗓️ Dátum szerinti szűrés")
 enable_date_filter = st.sidebar.checkbox("Időszak szűkítése", value=False)
 
@@ -476,8 +470,19 @@ with col_right:
                         annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
                     )
 
-            text_vals = [f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}" for val in y_vals]
-            text_vals = [f"{v} {current_unit}".strip() for v in text_vals]
+            # Értékek formázása (alap érték + opcionális akkumulált zárójelben)
+            formatted_texts = []
+            running_acc = accumulated_start_val
+            for val in y_vals:
+                v_str = f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}"
+                base_text = f"{v_str} {current_unit}".strip()
+                
+                if enable_accumulated:
+                    running_acc += val
+                    acc_str = f"{int(running_acc):,}".replace(",", " ") if running_acc.is_integer() else f"{running_acc}"
+                    base_text += f"<br>({acc_str} {current_unit})"
+                
+                formatted_texts.append(base_text)
 
             hu_months = {
                 1: "jan.", 2: "febr.", 3: "márc.", 4: "ápr.",
@@ -486,7 +491,9 @@ with col_right:
             }
             
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
-            x_formatted = [f"{d.year}. {hu_months[d.month]} {d.day}." for d in x_dates]
+            
+            # Teljesen függőleges formátum (soronként egy elem)
+            x_formatted = [f"{d.year}.<br>{hu_months[d.month]}<br>{d.day}." for d in x_dates]
 
             text_positions = ["middle right"] + ["top center"] * (len(x_numeric) - 1)
 
@@ -495,9 +502,9 @@ with col_right:
                 y=y_vals,
                 mode='markers+text',
                 marker=dict(size=15, color="#1E293B"),
-                text=text_vals,
+                text=formatted_texts,
                 textposition=text_positions,
-                textfont=dict(size=19, color="#000000", family="Arial Black"),
+                textfont=dict(size=17, color="#000000", family="Arial Black"),
                 showlegend=False
             ))
 
@@ -512,27 +519,27 @@ with col_right:
                 ),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
-                margin=dict(t=150, b=80, l=130, r=80),
+                margin=dict(t=150, b=100, l=80, r=80),
                 xaxis=dict(
-                    title=dict(text="<b>Dátum</b>", font=dict(color="#000000", size=26)),
+                    title=dict(text="", font=dict(color="#000000", size=1)), # Nincs tengelyfelirat
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=22, family="Arial Black"),
+                    tickfont=dict(color="#000000", size=18, family="Arial Black"),
                     showline=True,
                     linecolor="#000000",
                     linewidth=3,
                     range=[0, len(x_numeric) - 0.7]
                 ),
                 yaxis=dict(
-                    title=dict(text=f"<b>Érték ({current_unit})</b>", font=dict(color="#000000", size=26)),
+                    title=dict(text="", font=dict(color="#000000", size=1)), # Nincs tengelyfelirat
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=24, family="Arial Black"),
+                    tickfont=dict(color="#000000", size=22, family="Arial Black"),
                     showline=True,
                     linecolor="#000000",
                     linewidth=3
