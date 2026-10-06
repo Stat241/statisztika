@@ -316,7 +316,7 @@ if enable_accumulated:
     accumulated_start_val = st.sidebar.number_input("Kezdő érték:", value=0.0, step=1.0)
 
 # --- DÁTUM SZŰRÉS ---
-st.sidebar.subheader("🗓️ Dátum szerinti szűrés")
+st.sidebar.subheader("🗓️️ Dátum szerinti szűrés")
 enable_date_filter = st.sidebar.checkbox("Időszak szűkítése", value=False)
 
 start_date_filter, end_date_filter = None, None
@@ -493,12 +493,12 @@ with col_right:
             
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
             
-            # Dátumok normál, egy soros megjelenítése alul (pl. 2026. Október 10.)
-            x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.d}." if hasattr(d, 'd') else f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
+            # Dátumok normál, egy soros megjelenítése alul
+            x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
 
             text_positions = ["middle right"] + ["top center"] * (len(x_numeric) - 1)
 
-            # Értékek feliratainak elhelyezése a számok mellett, alulról felfelé olvashatóan (textangle=-90)
+            # Értékek feliratainak elhelyezése a számok mellett (textangle eltávolítva)
             fig.add_trace(go.Scatter(
                 x=x_numeric,
                 y=y_vals,
@@ -506,7 +506,6 @@ with col_right:
                 marker=dict(size=14, color="#1E293B"),
                 text=formatted_texts,
                 textposition=text_positions,
-                textangle=-90,
                 textfont=dict(size=15, color="#000000", family="Arial Black"),
                 showlegend=False
             ))
