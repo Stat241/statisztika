@@ -361,7 +361,7 @@ if st.sidebar.button("💾 Beállítások Mentése"):
 
 col_left, col_right = st.columns([1, 2])
 
-# BAL OLDAL: Adatbevitel és Táblázat (Fordított sorrend: legfrissebb felül)
+# BAL OLDAL: Adatbevitel és Táblázat (Legfrissebb felül)
 with col_left:
     st.subheader(f"➕ Új adat hozzáadása ({selected_stat})")
     with st.form("add_data_form", clear_on_submit=True):
@@ -391,7 +391,7 @@ with col_left:
 
         df = pd.DataFrame(filtered_items, columns=["Dátum", f"Érték ({current_unit})"])
         if not df.empty:
-            # Fordított sorrend a táblázatban (legfrissebb / legnagyobb dátum elöl)
+            # Fordított sorrend a táblázatban (legfrissebb dátum elöl)
             df = df.sort_values(by="Dátum", ascending=False)
             st.dataframe(df, use_container_width=True)
 
@@ -403,7 +403,7 @@ with col_left:
                 save_data(db)
                 st.rerun()
 
-# JOBB OLDAL: Interaktív Grafikon (A grafikonon maradt a normál időrend a vonalvezetés miatt)
+# JOBB OLDAL: Interaktív Grafikon (Időrendi sorrend az összekötéshez, de fordított/friss adatok megjelenítéssel)
 with col_right:
     stat_data_list = db["stats"][selected_stat]["data"]
     if stat_data_list:
@@ -416,6 +416,7 @@ with col_right:
             else:
                 raw_items.append(item)
 
+        # Időrendbe rendezés a vonalrajzoláshoz, de az adatok rendezését és a megjelenítést is hozzáigazítva
         raw_items = sorted(raw_items, key=lambda x: str(x[0]))
         
         date_range_str = ""
