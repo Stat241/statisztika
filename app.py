@@ -309,7 +309,7 @@ stat_settings = db.get("settings", {}).get(selected_stat, {})
 period = st.sidebar.radio("Időszak bontás:", ["Napi", "Heti (Cs)", "Havi"], index=1)
 
 # --- AKKUMULÁLT ÉRTÉK BEÁLLÍTÁSOK ---
-st.sidebar.subheader("📈 Akkumulált értékek")
+st.sidebar.subheader("📈 Akkumulált érték")
 enable_accumulated = st.sidebar.checkbox("Akkumulált érték számítása", value=False)
 accumulated_start_val = 0.0
 if enable_accumulated:
@@ -470,17 +470,24 @@ with col_right:
                         annotation_font=dict(size=21, color="#DC2626", family="Arial Black")
                     )
 
-            # Értékek formázása (alap érték + opcionális akkumulált zárójelben)
+            # Értékek és akkumulált értékek függőleges tördelése (soronként egymás alá)
             formatted_texts = []
             running_acc = accumulated_start_val
             for val in y_vals:
                 v_str = f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}"
-                base_text = f"{v_str} {current_unit}".strip()
+                
+                # Érték és mértékegység függőlegesen egymás alá (pl. 4 722 200 \n Ft)
+                base_text = f"{v_str}<br>{current_unit}" if current_unit else f"{v_str}"
                 
                 if enable_accumulated:
                     running_acc += val
                     acc_str = f"{int(running_acc):,}".replace(",", " ") if running_acc.is_integer() else f"{running_acc}"
-                    base_text += f"<br>({acc_str} {current_unit})"
+                    # Zárójeles akkumulált rész is függőlegesen alatta (pl. \n (5 000 000 \n Ft))
+                    base_text += f"<br>({acc_str}"
+                    if current_unit:
+                        base_text += f"<br>{current_unit})"
+                    else:
+                        base_text += ")"
                 
                 formatted_texts.append(base_text)
 
@@ -492,7 +499,7 @@ with col_right:
             
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
             
-            # Teljesen függőleges formátum (soronként egy elem)
+            # Dátumok teljesen függőlegesen (év, hónap, nap külön sorban)
             x_formatted = [f"{d.year}.<br>{hu_months[d.month]}<br>{d.day}." for d in x_dates]
 
             text_positions = ["middle right"] + ["top center"] * (len(x_numeric) - 1)
@@ -504,7 +511,7 @@ with col_right:
                 marker=dict(size=15, color="#1E293B"),
                 text=formatted_texts,
                 textposition=text_positions,
-                textfont=dict(size=17, color="#000000", family="Arial Black"),
+                textfont=dict(size=15, color="#000000", family="Arial Black"),
                 showlegend=False
             ))
 
@@ -519,23 +526,23 @@ with col_right:
                 ),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
-                margin=dict(t=150, b=100, l=80, r=80),
+                margin=dict(t=150, b=120, l=80, r=80),
                 xaxis=dict(
-                    title=dict(text="", font=dict(color="#000000", size=1)), # Nincs tengelyfelirat
+                    title=dict(text="", font=dict(color="#000000", size=1)), 
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=18, family="Arial Black"),
+                    tickfont=dict(color="#000000", size=16, family="Arial Black"),
                     showline=True,
                     linecolor="#000000",
                     linewidth=3,
                     range=[0, len(x_numeric) - 0.7]
                 ),
                 yaxis=dict(
-                    title=dict(text="", font=dict(color="#000000", size=1)), # Nincs tengelyfelirat
+                    title=dict(text="", font=dict(color="#000000", size=1)), 
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
