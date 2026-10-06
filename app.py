@@ -1,3 +1,4 @@
+cat << 'EOF' > /mount/src/statisztika/app.py
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -216,7 +217,7 @@ if "*" in allowed_stat_names:
                 st.warning("Add meg a nevet és a jelszót!")
 
         st.markdown("---")
-        st.write("### ✏️ Felhasználó módosítása")
+        st.write("### ✏️️ Felhasználó módosítása")
         edit_user_name = st.selectbox("Válassz szerkesztendő felhasználót:", options=list(USERS.keys()), key="edit_u_select")
         
         if edit_user_name:
@@ -432,7 +433,6 @@ with col_right:
             x_numeric = list(range(len(raw_items)))
             y_vals = [item[1] for item in raw_items]
 
-            # Élénkebb színek a vonalakhoz (#00C853 zöld, #FF1744 piros)
             for i in range(len(raw_items) - 1):
                 x1, y1 = x_numeric[i], y_vals[i]
                 x2, y2 = x_numeric[i+1], y_vals[i+1]
@@ -471,7 +471,6 @@ with col_right:
                         annotation_font=dict(size=21, color="#FF1744", family="Arial Black")
                     )
 
-            # Értékek és akkumulált értékek
             formatted_texts = []
             running_acc = accumulated_start_val
             for val in y_vals:
@@ -492,13 +491,10 @@ with col_right:
             }
             
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
-            
-            # Dátumok egy soros megjelenítése
             x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
 
             text_positions = ["middle right"] * len(x_numeric)
 
-            # Értékek feliratainak elhelyezése teljesen függőlegesen (textangle=-90), alulról felfelé olvashatóan
             fig.add_trace(go.Scatter(
                 x=x_numeric,
                 y=y_vals,
@@ -528,7 +524,7 @@ with col_right:
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
-                    tickangle=-90,  # <-- Dátumok teljesen függőlegesre állítva
+                    tickangle=-90,
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
@@ -566,9 +562,10 @@ with col_right:
                     'filename': f'{selected_stat}_grafikon',
                     'height': 1200,
                     'width': 1800,
-                    * # scale: 3
+                    'scale': 3
                 },
                 'displayModeBar': True
             }
 
             st.plotly_chart(fig, use_container_width=True, config=config)
+EOF
