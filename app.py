@@ -8,21 +8,27 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
-# ================= NYOMTATÁSI CSS (A4 Fekvő formátumra hangolva) =================
+# ================= NYOMTATÁSI CSS (A4 Fekvő formátumra igazítva) =================
 st.markdown("""
     <style>
     @media print {
-        @page { size: A4 landscape; margin: 10mm; }
+        @page { size: A4 landscape; margin: 5mm; }
         [data-testid="stSidebar"], 
         .stForm, 
         button, 
         iframe,
-        [data-testid="stHeader"] {
+        [data-testid="stHeader"],
+        [data-testid="stToolbar"] {
             display: none !important;
         }
         .main .block-container {
             padding: 0 !important;
+            margin: 0 !important;
             max-width: 100% !important;
+        }
+        .js-plotly-plot, .plotly, .plot-container {
+            width: 100% !important;
+            height: auto !important;
         }
         .js-plotly-plot .plotly .main-svg {
             shape-rendering: geometricPrecision !important;
@@ -432,9 +438,9 @@ with col_left:
 
 # JOBB OLDAL: Interaktív Grafikon
 with col_right:
-    # --- NYOMTATÁS GOMB ---
+    # --- NYOMTATÁS GOMB (window.parent.print() hívással a teljes Streamlit lap nyomtatásához) ---
     components.html("""
-        <button onclick="window.print()" style="
+        <button onclick="window.parent.print()" style="
             padding: 10px 24px; 
             font-size: 16px; 
             background-color: #000000; 
@@ -503,12 +509,14 @@ with col_right:
             running_acc = accumulated_start_val
             for val in y_vals:
                 v_str = f"{int(val):,}".replace(",", " ") if float(val).is_integer() else f"{val}"
-                base_text = f"{v_str} {current_unit}".strip()
                 
+                # AKKUMULÁLT ÉRTÉK AZ ÉRTÉK ALATT (új sorban <br>-rel)
                 if enable_accumulated:
                     running_acc += val
                     acc_str = f"{int(running_acc):,}".replace(",", " ") if float(running_acc).is_integer() else f"{running_acc}"
-                    base_text += f" ({acc_str})"
+                    base_text = f"{v_str} {current_unit}<br>({acc_str} {current_unit})"
+                else:
+                    base_text = f"{v_str} {current_unit}".strip()
                 
                 formatted_texts.append(base_text)
 
@@ -516,7 +524,7 @@ with col_right:
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
             x_formatted = [f"{d.year}. {d.month:02d}. {d.day:02d}." for d in x_dates]
 
-            # Markerek
+            # Adatpontok markerei
             fig.add_trace(go.Scatter(
                 x=x_numeric,
                 y=y_vals,
@@ -525,7 +533,7 @@ with col_right:
                 showlegend=False
             ))
 
-            # Értékek függőlegesen feliratként (annotációval, megelőzve a ValueError-t)
+            # Értékek feliratozása lentről felfelé (textangle=-90)
             for x_val, y_val, txt in zip(x_numeric, y_vals, formatted_texts):
                 fig.add_annotation(
                     x=x_val,
@@ -556,7 +564,7 @@ with col_right:
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
-                    tickangle=90,
+                    tickangle=-90,  # -90 fok: lentről felfelé olvasás, az évszám alul a tengelynél!
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
