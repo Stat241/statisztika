@@ -13,6 +13,19 @@ st.set_page_config(page_title="Statisztika Kezelő Rendszer", layout="wide", pag
 st.markdown("""
     <style>
     @media print {
+        @page { 
+            size: A4 landscape; 
+            margin: 10mm; 
+        }
+        body, html {
+            background-color: #ffffff !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -21,6 +34,12 @@ st.markdown("""
         iframe,
         .no-print {
             display: none !important;
+        }
+        .stPlotlyChart {
+            width: 100% !important;
+            height: 85vh !important;
+            margin: 0 auto !important;
+            page-break-inside: avoid !important;
         }
     }
     </style>
@@ -397,7 +416,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
                         autosize=True,
-                        height=680,  # MEGNÖVELT MAGASSÁG A NAGYOBB MEGJELENÉSHEZ
+                        height=680,
                         margin=dict(t=180, b=160, l=80, r=80),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
@@ -707,4 +726,3 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                 st.rerun()
         else:
             st.info("Az archívum üres.")
-            
