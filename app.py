@@ -8,41 +8,28 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
-# ================= NYOMTATÁSI CSS (A4 Fekvő formátumra igazítva, csak a grafikonra) =================
+# ================= Trebuchet MS BETŰTÍPUS ÉS NYOMTATÁSI CSS =================
 st.markdown("""
     <style>
+    * {
+        font-family: 'Trebuchet MS', sans-serif !important;
+    }
     @media print {
-        @page { size: A4 landscape; margin: 8mm; }
-        [data-testid="stSidebar"], 
-        [data-testid="stHeader"],
-        [data-testid="stToolbar"],
-        .stForm, 
-        button, 
-        iframe,
-        .no-print {
-            display: none !important;
+        @page { size: A4 landscape; margin: 5mm; }
+        
+        /* Nyomtatáskor csak magát a grafikont mutatjuk */
+        body * {
+            visibility: hidden !important;
         }
-        /* Bal oldali adatbeviteli oszlop elrejtése nyomtatáskor */
-        div[data-testid="stHorizontalBlock"] > div:first-child {
-            display: none !important;
+        .js-plotly-plot, .js-plotly-plot * {
+            visibility: visible !important;
         }
-        /* Jobb oldali grafikon oszlop teljes szélességűvé tétele nyomtatáskor */
-        div[data-testid="stHorizontalBlock"] > div:last-child {
+        .js-plotly-plot {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
             width: 100% !important;
-            flex: 1 1 100% !important;
-            max-width: 100% !important;
-        }
-        .main .block-container {
-            padding: 0 !important;
-            margin: 0 !important;
-            max-width: 100% !important;
-        }
-        .js-plotly-plot, .plotly, .plot-container {
-            width: 100% !important;
-        }
-        .js-plotly-plot .plotly .main-svg {
-            shape-rendering: geometricPrecision !important;
-            text-rendering: geometricPrecision !important;
+            height: auto !important;
         }
     }
     </style>
@@ -82,7 +69,7 @@ if "current_user" not in st.session_state:
     st.session_state.current_user = None
 
 def check_login():
-    st.markdown("<h2 style='text-align: center;'>🔐 Bejelentkezés a Statisztika Rendszerbe</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; font-family: \"Trebuchet MS\";'>🔐 Bejelentkezés a Statisztika Rendszerbe</h2>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         with st.form("login_form"):
@@ -119,6 +106,7 @@ def load_data():
         "stats": {
             "Bruttó Beérkezett Bevétel": {
                 "unit": "Ft",
+                "inverted": False,
                 "data": [
                     ["2026-07-23", 650000],
                     ["2026-07-30", 97500],
@@ -135,6 +123,7 @@ def load_data():
             },
             "Ügyfelek száma": {
                 "unit": "fő",
+                "inverted": False,
                 "data": [
                     ["2026-08-08", 5],
                     ["2026-08-15", 12],
@@ -173,7 +162,7 @@ if "stats" not in db:
     old_data = db.get("data", {})
     db["stats"] = {}
     for k, v in old_data.items():
-        db["stats"][k] = {"unit": "Ft", "data": v}
+        db["stats"][k] = {"unit": "Ft", "inverted": False, "data": v}
     save_data(db)
 
 USERS = load_users()
@@ -294,13 +283,19 @@ with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
     else:
         st.info("Még nincsenek elérhető archivált elemek.")
 
+# --- ÚJ STATISZTIKA LÉTREHOZÁSA (FORDÍTOTT STATISZTIKA OPCIÓVAL) ---
 with st.sidebar.expander("➕ Új statisztika létrehozása"):
     new_stat_name = st.text_input("Statisztika neve:", placeholder="pl. Ügyfelek száma")
     new_stat_unit = st.text_input("Mértékegység / Kategória:", placeholder="pl. fő, db, Ft")
+    is_new_inverted = st.checkbox("Fordított statisztika (a csökkenés a jó / zöld)")
     if st.button("Létrehozás"):
         if new_stat_name:
             if new_stat_name not in db["stats"]:
-                db["stats"][new_stat_name] = {"unit": new_stat_unit, "data": []}
+                db["stats"][new_stat_name] = {
+                    "unit": new_stat_unit, 
+                    "inverted": is_new_inverted,
+                    "data": []
+                }
                 save_data(db)
                 st.success(f"Létrehozva: {new_stat_name} ({new_stat_unit})")
                 st.rerun()
@@ -357,20 +352,12 @@ if selected_stat == "📋 ÖSSZESÍTŐ NÉZET":
 # ================= 2. EGYEDI STATISZTIKA NÉZET =================
 current_unit = db["stats"][selected_stat].get("unit", "")
 stat_settings = db.get("settings", {}).get(selected_stat, {})
+is_inverted = db["stats"][selected_stat].get("inverted", False)
 
-# --- MEGSZEMÉLYESÍTÉS (BAL FELÜLRE) ---
+# --- FEJLÉC ADATOK (NÉV ÉS POSZT) ---
 st.sidebar.subheader("👤 Fejléc adatai (Grafikonra)")
 person_name = st.sidebar.text_input("Név:", value=stat_settings.get("person_name", ""))
 person_post = st.sidebar.text_input("Poszt / Beosztás:", value=stat_settings.get("person_post", ""))
-
-# --- GRAFIKON MÉRETEZÉSE (ÉRTÉKEK TÁVOLSÁGA) ---
-st.sidebar.subheader("📏 Grafikon méretezése")
-chart_width_val = st.sidebar.slider(
-    "Értékek közötti távolság (Szélesség px):", 
-    min_value=800, max_value=3000, 
-    value=int(stat_settings.get("chart_width", 1400)), 
-    step=100
-)
 
 period = st.sidebar.radio("Időszak bontás:", ["Napi", "Heti (Cs)", "Havi"], index=1)
 
@@ -394,12 +381,22 @@ if enable_date_filter:
         start_date_filter = st.sidebar.date_input("Kezdő dátum", value=min_d, min_value=min_d, max_value=max_d)
         end_date_filter = st.sidebar.date_input("Záró dátum", value=max_d, min_value=min_d, max_value=max_d)
 
+# --- ÉRTÉK TENGELY & GRAFIKON SZÉLESSÉG (BEÍRÓS MEZŐVEL) ---
 st.sidebar.subheader("📐 Érték Tengely & Vonalak")
 col_min, col_max, col_step = st.sidebar.columns(3)
 
 with col_min: ymin = st.text_input("Min", value=stat_settings.get("ymin", ""))
 with col_max: ymax = st.text_input("Max", value=stat_settings.get("ymax", ""))
 with col_step: ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
+
+chart_width_val = st.sidebar.number_input(
+    "Grafikon szélessége (px):", 
+    min_value=600, max_value=4000, 
+    value=int(stat_settings.get("chart_width", 1400)), 
+    step=100
+)
+
+is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (a csökkenés a jó / zöld)", value=is_inverted)
 
 show_ref_line = st.sidebar.checkbox("Referencia vonal megjelenítése", value=stat_settings.get("show_ref", True))
 ref_line_val = st.sidebar.text_input(
@@ -421,6 +418,7 @@ if st.sidebar.button("💾 Beállítások Mentése"):
         "show_ref": show_ref_line, 
         "ref_line": ref_line_val
     }
+    db["stats"][selected_stat]["inverted"] = is_stat_inverted_check
     save_data(db)
     st.sidebar.success("Beállítások elmentve!")
 
@@ -469,7 +467,7 @@ with col_left:
 
 # JOBB OLDAL: Interaktív Grafikon
 with col_right:
-    # --- NYOMTATÁS GOMB (window.parent.print() hívással a teljes A4 laphoz) ---
+    # --- NYOMTATÁS GOMB ---
     components.html("""
         <button onclick="window.parent.print()" style="
             padding: 10px 24px; 
@@ -479,20 +477,11 @@ with col_right:
             border: none; 
             border-radius: 8px; 
             cursor: pointer;
-            font-family: Arial, sans-serif;
+            font-family: 'Trebuchet MS', sans-serif;
             font-weight: bold;
             box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
         ">🖨️ Nyomtatás A4-es papírra</button>
     """, height=60)
-
-    # --- BAL FELÜLSŐ FEJLÉC ADATOK (NÉV ÉS POSZT) ---
-    if person_name or person_post:
-        st.markdown(f"""
-            <div style="text-align: left; margin-bottom: 15px; font-family: Arial, sans-serif;">
-                {f'<div style="font-size: 22px; font-weight: bold; color: #000000;">Név: {person_name}</div>' if person_name else ''}
-                {f'<div style="font-size: 18px; font-weight: bold; color: #334155;">Poszt: {person_post}</div>' if person_post else ''}
-            </div>
-        """, unsafe_allow_html=True)
 
     if stat_data_list:
         raw_items = [item for item in stat_data_list]
@@ -516,11 +505,15 @@ with col_right:
             x_numeric = list(range(len(raw_items)))
             y_vals = [item[1] for item in raw_items]
 
+            # Vonalak színezése (fordított statisztika figyelembevételével)
             for i in range(len(raw_items) - 1):
                 x1, y1 = x_numeric[i], y_vals[i]
                 x2, y2 = x_numeric[i+1], y_vals[i+1]
                 
-                color = "#00C853" if y2 >= y1 else "#FF1744"
+                if is_stat_inverted_check:
+                    color = "#00C853" if y2 <= y1 else "#FF1744"
+                else:
+                    color = "#00C853" if y2 >= y1 else "#FF1744"
                 
                 fig.add_trace(go.Scatter(
                     x=[x1, x2],
@@ -542,7 +535,7 @@ with col_right:
                     line_width=6,
                     annotation_text=formatted_ref_text,
                     annotation_position="bottom right",
-                    annotation_font=dict(size=21, color="#FF1744", family="Arial Black")
+                    annotation_font=dict(size=21, color="#FF1744", family="Trebuchet MS")
                 )
 
             formatted_texts = []
@@ -550,7 +543,6 @@ with col_right:
             for val in y_vals:
                 v_str = f"{int(val):,}".replace(",", " ") if float(val).is_integer() else f"{val}"
                 
-                # AKKUMULÁLT ÉRTÉK AZ ÉRTÉK ALATT / MELLETT (új sorban <br>-rel)
                 if enable_accumulated:
                     running_acc += val
                     acc_str = f"{int(running_acc):,}".replace(",", " ") if float(running_acc).is_integer() else f"{running_acc}"
@@ -560,7 +552,7 @@ with col_right:
                 
                 formatted_texts.append(base_text)
 
-            # Számos dátum formátum (pl. 2026. 07. 23.)
+            # Dátumok formátuma (évszám alul, lentről felfelé olvasva)
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
             x_formatted = [f"{d.year}. {d.month:02d}. {d.day:02d}." for d in x_dates]
 
@@ -573,7 +565,7 @@ with col_right:
                 showlegend=False
             ))
 
-            # Értékek feliratozása lentről felfelé (textangle=-90)
+            # Értékek feliratozása lentről felfelé (-90 fok)
             for x_val, y_val, txt in zip(x_numeric, y_vals, formatted_texts):
                 fig.add_annotation(
                     x=x_val,
@@ -582,34 +574,53 @@ with col_right:
                     showarrow=False,
                     yshift=15,
                     textangle=-90,
-                    font=dict(size=15, color="#000000", family="Arial Black"),
+                    font=dict(size=15, color="#000000", family="Trebuchet MS"),
                     xanchor="center",
                     yanchor="bottom"
                 )
 
+            # --- NÉV ÉS POSZT FELIRAT A GRAFIKON BAL FELSŐ SARKÁBAN (ELŐTAGOK NÉLKÜL) ---
+            if person_name or person_post:
+                header_lines = []
+                if person_name:
+                    header_lines.append(f"<b>{person_name}</b>")
+                if person_post:
+                    header_lines.append(f"{person_post}")
+                
+                fig.add_annotation(
+                    xref="paper", yref="paper",
+                    x=0.01, y=0.99,
+                    text="<br>".join(header_lines),
+                    showarrow=False,
+                    align="left",
+                    xanchor="left", yanchor="top",
+                    font=dict(size=18, color="#000000", family="Trebuchet MS")
+                )
+
             layout_args = dict(
+                font=dict(family="Trebuchet MS"),
                 title=dict(
                     text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
                     x=0.5,
                     xref="paper",
                     xanchor='center',
                     yanchor='top',
-                    font=dict(size=42, color="#000000")
+                    font=dict(size=42, color="#000000", family="Trebuchet MS")
                 ),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
-                width=chart_width_val, # Testreszabható grafikon szélesség / értékek távolsága
+                width=chart_width_val, # Beállított szélesség érvényesítése
                 margin=dict(t=150, b=150, l=60, r=60),
                 xaxis=dict(
                     title=dict(text="", font=dict(color="#000000", size=1)), 
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
-                    tickangle=-90,  # -90 fok: lentről felfelé olvasás, az évszám alul a tengelynél!
+                    tickangle=-90,
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=15, family="Arial Black"),
+                    tickfont=dict(color="#000000", size=15, family="Trebuchet MS"),
                     showline=True,
                     linecolor="#000000",
                     linewidth=3,
@@ -621,7 +632,7 @@ with col_right:
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=18, family="Arial Black"),
+                    tickfont=dict(color="#000000", size=18, family="Trebuchet MS"),
                     showline=True,
                     linecolor="#000000",
                     linewidth=3
@@ -647,4 +658,5 @@ with col_right:
                 'displayModeBar': True
             }
 
-            st.plotly_chart(fig, use_container_width=True, config=config)
+            # use_container_width=False biztosítja, hogy a chart_width_val pixelérték pontosan érvényesüljön
+            st.plotly_chart(fig, use_container_width=False, config=config)
