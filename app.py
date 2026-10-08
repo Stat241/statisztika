@@ -321,7 +321,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         if show_acc_in_brackets and accumulated_vals:
                             acc_val = accumulated_vals[idx]
                             acc_str = f"{int(acc_val):,}".replace(",", " ") if float(acc_val).is_integer() else f"{acc_val}"
-                            formatted_texts.append(f"{v_str} <span style='font-size:13px; color:#475569;'>({acc_str} {current_unit})</span>")
+                            formatted_texts.append(f"{v_str} <span style='font-size:11px; color:#475569;'>({acc_str} {current_unit})</span>")
                         else:
                             formatted_texts.append(v_str)
 
@@ -342,11 +342,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
-                    # Értékek feliratozása VÍZSZINTESEN (textangle=0)
+                    # Értékek feliratozása KICSIBEN ÉS OLDALSASAN (textangle=-30)
                     for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
                         fig.add_annotation(
-                            x=x_val, y=y_val, text=txt, showarrow=False, yshift=14, textangle=0,
-                            font=dict(size=13, color="#000000", family="Arial Black"),
+                            x=x_val, y=y_val, text=txt, showarrow=False, yshift=12, textangle=-30,
+                            font=dict(size=11, color="#000000", family="Arial Black"),
                             xanchor="center", yanchor="bottom"
                         )
 
@@ -469,8 +469,8 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
                 for x_val, y_val, txt, d_str in zip(x_idx_current, y_vals, formatted_texts, orig_dates):
                     annotation_text = f"{txt} ({d_str})" if show_dates_on_chart else txt
                     fig.add_annotation(
-                        x=x_val, y=y_val, text=annotation_text, showarrow=False, yshift=14, textangle=0, 
-                        font=dict(size=11, color=trace_color, family="Arial Black"), 
+                        x=x_val, y=y_val, text=annotation_text, showarrow=False, yshift=12, textangle=-30, 
+                        font=dict(size=10, color=trace_color, family="Arial Black"), 
                         xanchor="center", yanchor="bottom"
                     )
             
@@ -572,8 +572,8 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                 
                                 for x_val, y_val, txt in zip(x_num, card_y, formatted_t):
                                     fig_card.add_annotation(
-                                        x=x_val, y=y_val, text=txt, showarrow=False, yshift=10, textangle=0,
-                                        font=dict(size=9, color="#000000", family="Arial Black"), xanchor="center", yanchor="bottom"
+                                        x=x_val, y=y_val, text=txt, showarrow=False, yshift=8, textangle=-30,
+                                        font=dict(size=8, color="#000000", family="Arial Black"), xanchor="center", yanchor="bottom"
                                     )
                                 
                                 yaxis_card = dict(showgrid=True, gridcolor="#F1F5F9", gridwidth=1.5, tickfont=dict(color="#000", size=11, family="Arial Black"), showline=True, linecolor="#000", linewidth=1.5)
@@ -707,3 +707,4 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                 st.rerun()
         else:
             st.info("Az archívum üres.")
+            
