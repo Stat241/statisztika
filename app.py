@@ -15,10 +15,14 @@ st.markdown("""
     @media print {
         @page { 
             size: A4 landscape; 
-            margin: 10mm; 
+            margin: 5mm; 
         }
-        body {
+        body, html {
             background-color: #ffffff !important;
+            width: 297mm !important;
+            height: 210mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
@@ -34,16 +38,19 @@ st.markdown("""
         body * {
             visibility: hidden !important;
         }
-        .js-plotly-plot, .js-plotly-plot *, .js-plotly-plot svg, .js-plotly-plot .main-svg {
+        .js-plotly-plot, .js-plotly-plot *, .js-plotly-plot svg, .js-plotly-plot .main-svg, .js-plotly-plot .svg-container {
             visibility: visible !important;
         }
         .js-plotly-plot {
-            position: absolute !important;
+            position: fixed !important;
             left: 0 !important;
             top: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            max-height: 190mm !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
         .js-plotly-plot .svg-container {
             width: 100% !important;
@@ -384,14 +391,14 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                                 xanchor="center", yanchor="bottom"
                             )
 
-                    # Név és Poszt bal felül
+                    # Név és Poszt bal felül (megfelelő vertikális távolsággal, hogy ne érjenek össze)
                     if person_name or person_post:
                         header_lines = []
                         if person_name: header_lines.append(f"<span style='font-size: 26px;'><b>{person_name}</b></span>")
                         if person_post: header_lines.append(f"<span style='font-size: 20px; color: #000000;'>{person_post}</span>")
                         
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.05,
+                            xref="paper", yref="paper", x=0.0, y=1.12,
                             text="<br>".join(header_lines), showarrow=False,
                             align="left", xanchor="left", yanchor="bottom", font=dict(family="Arial Black", color="#000000")
                         )
@@ -400,7 +407,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = f"{int(calc_goal_val):,}".replace(",", " ") if float(calc_goal_val).is_integer() else f"{calc_goal_val}"
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=1.0, y=1.05,
+                            xref="paper", yref="paper", x=1.0, y=1.12,
                             text=f"🎯 Cél: {goal_fmt} {current_unit}",
                             showarrow=False,
                             align="right", xanchor="right", yanchor="bottom",
@@ -418,12 +425,13 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     layout_args = dict(
                         title=dict(
-                            text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
+                            text=f"<b>{selected_stat}</b><br><span style='font-size: 24px; color: #1E293B;'>Időszak: {date_range_str}</span>",
                             x=0.5, xref="paper", xanchor='center', yanchor='top',
-                            font=dict(size=38, color="#000000")
+                            font=dict(size=34, color="#000000")
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
-                        margin=dict(t=150, b=150, l=60, r=60),
+                        autosize=True,
+                        margin=dict(t=160, b=150, l=60, r=60),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
                             tickmode="array", tickvals=x_numeric, ticktext=x_formatted, tickangle=-90,
