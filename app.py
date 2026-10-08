@@ -14,18 +14,16 @@ st.markdown("""
     <style>
     @media print {
         @page { 
-            size: A4 landscape; 
-            margin: 0; 
+            margin: 8mm; 
         }
         body, html {
             background-color: #ffffff !important;
-            width: 297mm !important;
-            height: 210mm !important;
+            width: 100% !important;
+            height: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
-            overflow: hidden !important;
         }
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
@@ -43,13 +41,11 @@ st.markdown("""
             visibility: visible !important;
         }
         .js-plotly-plot {
-            position: fixed !important;
-            left: 10mm !important;
-            top: 10mm !important;
-            width: 277mm !important;
-            height: 190mm !important;
-            max-width: 277mm !important;
-            max-height: 190mm !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
             border: 4px solid #000000 !important;
             box-sizing: border-box !important;
             padding: 5mm !important;
