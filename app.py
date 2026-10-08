@@ -9,18 +9,43 @@ import streamlit.components.v1 as components
 # ================= OLDAL ALAPBEÁLLÍTÁSAI =================
 st.set_page_config(page_title="Statisztika Kezelő Rendszer", layout="wide", page_icon="📊")
 
-# ================= NYOMTATÁSI CSS =================
+# ================= NYOMTATÁSI CSS (A4 MÉRETRE OPTIMALIZÁLVA) =================
 st.markdown("""
     <style>
     @media print {
+        @page {
+            size: A4 landscape;
+            margin: 8mm;
+        }
+        
+        /* Streamlit vezérlők, oldalsáv és gombok elrejtése nyomtatáskor */
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
+        [data-baseweb="tab-list"],
+        .stTabs [role="tablist"],
         .stForm, 
         button, 
         iframe,
         .no-print {
             display: none !important;
+        }
+        
+        /* Fő konténer kiterjesztése a teljes A4-es lapra */
+        html, body, [data-testid="stAppViewContainer"], .main, .block-container {
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            overflow: visible !important;
+        }
+        
+        /* Grafikon teljes kitöltése A4-en */
+        .stPlotlyChart, .js-plotly-plot, .plot-container {
+            width: 100% !important;
+            height: 100% !important;
+            page-break-inside: avoid !important;
         }
     }
     </style>
@@ -339,7 +364,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     cursor: pointer;
                     font-weight: bold;
                     box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
-                ">🖨️ Nyomtatás</button>
+                ">🖨️ Nyomtatás A4-re</button>
             """, height=50)
 
             stat_data_raw = db["stats"][selected_stat]["data"]
@@ -538,7 +563,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
-                    # --- KÜLÖNLLÁVÓ ANNOTÁCIÓK A NÉVHEZ ÉS POSZTHOZ (ÖSSZECSÚSZÁS ELLEN) ---
+                    # FEJLÉC ANNOTÁCIÓK (SZERKESZTETT SORKÖZZEL ÉS DEDIKÁLT POZÍCIÓVAL)
                     if person_name:
                         fig.add_annotation(
                             xref="paper", yref="paper", x=0.0, y=1.24,
@@ -805,117 +830,4 @@ elif selected_menu == "📖 Eseménynapló":
     for s_name in stat_names:
         s_data = db["stats"][s_name]["data"]
         s_unit = db["stats"][s_name].get("unit", "")
-        for item in s_data:
-            if len(item) > 2 and item[2].strip():
-                all_events.append({
-                    "date": item[0],
-                    "stat": s_name,
-                    "value": fmt_num(item[1], s_unit),
-                    "note": item[2]
-                })
-    
-    if all_events:
-        all_events_sorted = sorted(all_events, key=lambda x: x["date"], reverse=True)
-        df_events = pd.DataFrame(all_events_sorted)
-        df_events.columns = ["Dátum", "Statisztika neve", "Érték", "Esemény / Megjegyzés"]
-        st.dataframe(df_events, use_container_width=True, hide_index=True)
-    else:
-        st.info("Még nincsenek rögzített események vagy megjegyzések a statisztikákhoz.")
-
-# 5. ÚJ STATISZTIKA LÉTREHOZÁSA
-elif selected_menu == "➕ Új Statisztika Létrehozása":
-    st.title("➕ Új Statisztika Kategória Létrehozása")
-    st.write("Itt hozhatsz létre új adatsort és sorolhatod be a megfelelő részlegbe.")
-    
-    groups_list = db.get("groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"])
-    
-    with st.form("create_stat_form"):
-        new_stat_name = st.text_input("Statisztika neve:", placeholder="pl. Új Eladások")
-        new_stat_unit = st.text_input("Mértékegység:", placeholder="pl. Ft, db, fő")
-        new_stat_group = st.selectbox("Csoport / Részleg:", options=groups_list)
-        is_new_inverted = st.checkbox("Fordított statisztika (a 0 felül van és lefelé nő)")
-        
-        submit = st.form_submit_button("Létrehozás")
-        if submit:
-            if new_stat_name:
-                if new_stat_name not in db["stats"]:
-                    db["stats"][new_stat_name] = {
-                        "unit": new_stat_unit, 
-                        "group": new_stat_group,
-                        "inverted": is_new_inverted, 
-                        "data": []
-                    }
-                    save_data(db)
-                    st.success(f"Sikeresen létrehozva: {new_stat_name} ({new_stat_unit}) - Részleg: {new_stat_group}")
-                else:
-                    st.error("Ilyen nevű statisztika már létezik!")
-            else:
-                st.warning("Adj meg egy nevet!")
-
-# 6. ADMINISZTRÁCIÓ & ARCHÍVUM
-elif selected_menu == "⚙️ Adminisztráció & Archívum":
-    st.title("⚙️ Rendszer Adminisztráció")
-    
-    st.subheader("📁 Csoportok / Részlegek Kezelése")
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        new_group_name = st.text_input("Új részleg / csoport neve:")
-        if st.button("➕ Részleg Hozzáadása"):
-            if new_group_name and new_group_name not in db["groups"]:
-                db["groups"].append(new_group_name)
-                save_data(db)
-                st.success(f"'{new_group_name}' sikeresen létrehozva!")
-                st.rerun()
-            else:
-                st.warning("Add meg a nevet vagy már létezik ilyen részleg!")
-                
-    with col_g2:
-        st.markdown("#### Meglévő részlegek törlése")
-        current_groups_list = db.get("groups", [])
-        group_to_delete = st.selectbox("Törlendő részleg:", options=current_groups_list if current_groups_list else [""])
-        if st.button("🗑️ Részleg Törlése") and group_to_delete:
-            if group_to_delete in db["groups"]:
-                db["groups"].remove(group_to_delete)
-                for s_key in db["stats"]:
-                    if db["stats"][s_key].get("group") == group_to_delete:
-                        db["stats"][s_key]["group"] = "Egyéb"
-                save_data(db)
-                st.success(f"'{group_to_delete}' részleg törölve!")
-                st.rerun()
-
-    st.markdown("---")
-    st.subheader("🗑️ Statisztika kategória végleges törlése")
-    stat_to_delete_cat = st.selectbox("Törlendő statisztika kategória:", options=all_stat_names if all_stat_names else [""])
-    if st.button("🗑️ Statisztika Törlése") and stat_to_delete_cat:
-        if stat_to_delete_cat in db["stats"]:
-            del db["stats"][stat_to_delete_cat]
-            if "settings" in db and stat_to_delete_cat in db["settings"]:
-                del db["settings"][stat_to_delete_cat]
-            save_data(db)
-            st.success(f"'{stat_to_delete_cat}' statisztika sikeresen törölve!")
-            st.rerun()
-
-    st.markdown("---")
-    st.subheader("📂 Archívum kezelése")
-    archive_db = load_archive()
-    
-    col_a1, col_a2 = st.columns(2)
-    with col_a1:
-        st.markdown("#### Statisztika archiválása")
-        stat_to_archive = st.selectbox("Archiválandó statisztika:", options=all_stat_names)
-        if st.button("📦 Archiválás"):
-            archive_db[stat_to_archive] = db["stats"][stat_to_archive]
-            save_archive(archive_db)
-            st.success("Archiválva!")
-            
-    with col_a2:
-        st.markdown("#### Visszaállítás az archívumból")
-        if archive_db:
-            stat_to_restore = st.selectbox("Visszaállítandó elem:", options=list(archive_db.keys()))
-            if st.button("🔄 Visszaállítás"):
-                db["stats"][stat_to_restore] = archive_db[stat_to_restore]
-                save_data(db)
-                st.success("Visszaállítva!")
-                st.rerun()
-        else:
-            st.info("Az archívum üres.")
+        for item in s
