@@ -256,24 +256,34 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     save_data(db)
                     st.rerun()
 
-            st.subheader("📋 Adat-táblázat")
+            st.subheader("📋 Adat-táblázat (Törlés kukás gombbal)")
             stat_data_raw = db["stats"][selected_stat]["data"]
             if stat_data_raw:
-                normalized_data = [[item[0], item[1], item[2] if len(item) > 2 else ""] for item in stat_data_raw]
-                db["stats"][selected_stat]["data"] = normalized_data
+                # Fejléc sor
+                h_cols = st.columns([2, 2, 3, 1])
+                h_cols[0].markdown("**Dátum / Időpont**")
+                h_cols[1].markdown(f"**Érték ({current_unit})**")
+                h_cols[2].markdown("**Megjegyzés**")
+                h_cols[3].markdown("**Törlés**")
+                st.markdown("---")
 
-                df = pd.DataFrame(normalized_data, columns=["Dátum", f"Érték ({current_unit})", "Megjegyzés"])
-                df = df.sort_values(by="Dátum", ascending=False)
-                st.dataframe(df, use_container_width=True)
+                # Adatsorok megjelenítése soronkénti kukás gombbal a végén
+                for idx, item in enumerate(stat_data_raw):
+                    dt_val = item[0]
+                    v_val = item[1]
+                    n_val = item[2] if len(item) > 2 else ""
 
-                del_idx = st.number_input("Törlendő sor sorszáma (index):", min_value=0, max_value=len(df)-1 if len(df)>0 else 0, step=1)
-                if st.button("🔴 Sor Törlése") and len(df) > 0:
-                    target_to_delete = df.iloc[int(del_idx)].tolist()
-                    for idx, row in enumerate(db["stats"][selected_stat]["data"]):
-                        if row[0] == target_to_delete[0] and row[1] == target_to_delete[1]:
-                            del db["stats"][selected_stat]["data"][idx]
-                            save_data(db)
-                            st.rerun()
+                    r_cols = st.columns([2, 2, 3, 1])
+                    r_cols[0].write(dt_val)
+                    r_cols[1].write(fmt_num(v_val, current_unit))
+                    r_cols[2].write(n_val if n_val else "-")
+                    
+                    if r_cols[3].button("🗑️", key=f"del_row_{selected_stat}_{idx}"):
+                        db["stats"][selected_stat]["data"].pop(idx)
+                        save_data(db)
+                        st.rerun()
+            else:
+                st.info("Még nincsenek rögzített adatok ebben a statisztikában.")
 
         with tab_chart:
             components.html("""
@@ -294,7 +304,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             
             if stat_data_raw:
                 df_temp = pd.DataFrame([[item[0], item[1], item[2] if len(item)>2 else ""] for item in stat_data_raw], columns=["Dátum", "Érték", "Megjegyzés"])
-                # Kevert dátumformátumok biztonságos kezelése (format="mixed")
                 df_temp["Dátum"] = pd.to_datetime(df_temp["Dátum"], format="mixed", errors="coerce")
                 df_temp = df_temp.dropna(subset=["Dátum"])
                 df_temp["Érték"] = pd.to_numeric(df_temp["Érték"])
