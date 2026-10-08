@@ -9,13 +9,13 @@ import streamlit.components.v1 as components
 # ================= OLDAL ALAPBEÁLLÍTÁSAI =================
 st.set_page_config(page_title="Statisztika Kezelő Rendszer", layout="wide", page_icon="📊")
 
-# ================= NYOMTATÁSI CSS (A4 MÉRETRE OPTIMALIZÁLVA) =================
+# ================= NYOMTATÁSI CSS (A4 FEKVŐ MÉRETRE OPTIMALIZÁLVA) =================
 st.markdown("""
     <style>
     @media print {
         @page {
             size: A4 landscape;
-            margin: 8mm;
+            margin: 5mm;
         }
         
         /* Streamlit vezérlők, oldalsáv és gombok elrejtése nyomtatáskor */
@@ -38,13 +38,13 @@ st.markdown("""
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
-            overflow: visible !important;
+            overflow: hidden !important;
         }
         
-        /* Grafikon teljes kitöltése A4-en */
+        /* Grafikon teljes kitöltése A4-en levágás nélkül */
         .stPlotlyChart, .js-plotly-plot, .plot-container {
             width: 100% !important;
-            height: 100% !important;
+            height: 92vh !important;
             page-break-inside: avoid !important;
         }
     }
@@ -563,29 +563,30 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
+                    # --- BALRA TOLT FEJLÉC ANNOTÁCIÓK (A KERET TELJES BAL SZÉLÉRE IGAZÍTVA) ---
                     if person_name:
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.24,
+                            xref="container", yref="container", x=0.01, y=0.97,
                             text=f"<b>{person_name}</b>", showarrow=False,
-                            align="left", xanchor="left", yanchor="bottom",
-                            font=dict(size=30, family="Arial Black", color="#000000")
+                            align="left", xanchor="left", yanchor="top",
+                            font=dict(size=28, family="Arial Black", color="#000000")
                         )
                     if person_post:
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.13,
+                            xref="container", yref="container", x=0.01, y=0.91,
                             text=person_post, showarrow=False,
-                            align="left", xanchor="left", yanchor="bottom",
-                            font=dict(size=22, family="Arial Black", color="#000000")
+                            align="left", xanchor="left", yanchor="top",
+                            font=dict(size=20, family="Arial Black", color="#000000")
                         )
 
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=1.0, y=1.18,
+                            xref="container", yref="container", x=0.99, y=0.97,
                             text=f"🎯 Cél: {goal_fmt}",
                             showarrow=False,
-                            align="right", xanchor="right", yanchor="bottom",
-                            font=dict(size=22, color="#C5A059", family="Arial Black")
+                            align="right", xanchor="right", yanchor="top",
+                            font=dict(size=20, color="#C5A059", family="Arial Black")
                         )
 
                     yaxis_dict = dict(
@@ -601,14 +602,14 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     layout_args = dict(
                         title=dict(
-                            text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
-                            x=0.5, xref="paper", xanchor='center', yanchor='top',
-                            font=dict(size=38, color="#000000")
+                            text=f"<b>{selected_stat}</b><br><span style='font-size: 22px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
+                            x=0.5, xref="container", y=0.97, xanchor='center', yanchor='top',
+                            font=dict(size=32, color="#000000")
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
                         autosize=True,
-                        height=720,
-                        margin=dict(t=210, b=160, l=80, r=80),
+                        height=620,
+                        margin=dict(t=110, b=120, l=70, r=50),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
                             tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
@@ -709,7 +710,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
 
 # 3. ÖSSZESÍTŐ DASHBOARD (KÁRTYA NÉZET + ÁLLAPOTOK)
 elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
-    st.title("📋 Teljesítmembizottsági Statisztikák Dashboard")
+    st.title("📋 Teljesítménymérő Statisztikák Dashboard")
     
     all_groups = db.get("groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"])
     selected_group_filter = st.selectbox("Szűrés csoport / részleg szerint:", ["Összes csoport"] + all_groups)
