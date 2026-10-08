@@ -235,7 +235,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             db["settings"][selected_stat]["show_acc_in_brackets"] = show_acc_in_brackets
             db["settings"][selected_stat]["initial_accumulated_val"] = initial_accumulated_val
             
-            # Nézetenként elmentjük a saját méretezést, életvonalat és célt
             db["settings"][selected_stat][indiv_agg] = {
                 "ymin": ymin,
                 "ymax": ymax,
@@ -439,6 +438,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             align="left", xanchor="left", yanchor="bottom", font=dict(family="Arial Black", color="#000000")
                         )
 
+                    # Cél kiírása a jobb felső sarokba (Fejlesztési Hitelközpont arany arculati színével: #C5A059)
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
@@ -446,7 +446,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             text=f"🎯 Cél: {goal_fmt}",
                             showarrow=False,
                             align="right", xanchor="right", yanchor="bottom",
-                            font=dict(size=20, color="#2563EB", family="Arial Black")
+                            font=dict(size=22, color="#C5A059", family="Arial Black")
                         )
 
                     yaxis_dict = dict(
