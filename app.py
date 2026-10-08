@@ -104,7 +104,6 @@ def save_archive(archive_data):
     with open(ARCHIVE_FILE, "w", encoding="utf-8") as f:
         json.dump(archive_data, f, ensure_ascii=False, indent=2)
 
-# Állapot-meghatározó logika (Életvonal / Célvonal alatti rész = Nem létezés / Vészhelyzet)
 def calculate_stat_condition(data, ref_val=0):
     if not data or len(data) < 1:
         return "Normál", "gray"
@@ -138,7 +137,7 @@ if "groups" not in db:
 
 all_stat_names = list(db["stats"].keys())
 stat_names = all_stat_names
-is_admin = True  # Közvetlen admin hozzáférés
+is_admin = True
 
 # ================= NAVIGÁCIÓ =================
 st.sidebar.title("📌 Navigáció")
@@ -183,7 +182,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
-        # Cél és Életvonal beállítások
         st.sidebar.markdown("---")
         st.sidebar.subheader("🎯 Célkitűzés & Életvonal")
         goal_type = st.sidebar.selectbox("Cél / Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0)
@@ -203,7 +201,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         col_left, col_right = st.columns([1, 2.5])
 
-        # BAL OLDAL: Adatbevitel és Táblázat
         with col_left:
             st.subheader(f"➕ Új adat ({selected_stat})")
             with st.form("add_data_form", clear_on_submit=True):
@@ -234,7 +231,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             save_data(db)
                             st.rerun()
 
-        # JOBB OLDAL: Interaktív Grafikon és alatta a Célkitűzés doboz
         with col_right:
             components.html("""
                 <button onclick="window.parent.print()" style="
@@ -320,15 +316,16 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
+                    # Név és Poszt teljesen bal felül, fekete színnel, a címmel egy sorban
                     if person_name or person_post:
                         header_lines = []
-                        if person_name: header_lines.append(f"<span style='font-size: 32px;'><b>{person_name}</b></span>")
-                        if person_post: header_lines.append(f"<span style='font-size: 24px; color: #334155;'>{person_post}</span>")
+                        if person_name: header_lines.append(f"<span style='font-size: 26px;'><b>{person_name}</b></span>")
+                        if person_post: header_lines.append(f"<span style='font-size: 20px; color: #000000;'>{person_post}</span>")
                         
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=0.01, y=0.99,
+                            xref="paper", yref="paper", x=0.0, y=1.05,
                             text="<br>".join(header_lines), showarrow=False,
-                            align="left", xanchor="left", yanchor="top", font=dict(family="Arial Black")
+                            align="left", xanchor="left", yanchor="bottom", font=dict(family="Arial Black", color="#000000")
                         )
 
                     yaxis_dict = dict(
@@ -342,7 +339,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     layout_args = dict(
                         title=dict(
-                            text=f"<b>{selected_stat}</b> ({stat_group})<br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
+                            text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
                             x=0.5, xref="paper", xanchor='center', yanchor='top',
                             font=dict(size=38, color="#000000")
                         ),
