@@ -181,8 +181,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         with col_step: ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
+        is_accumulated = st.sidebar.checkbox("🔄 Akkumulált értékek (halmozott összeg)", value=stat_settings.get("is_accumulated", False))
         
-        # Életvonal és Célkitűzés beállítások biztonságos fallbackkel (régi adatok kezelése)
+        # Életvonal és Célkitűzés beállítások biztonságos fallbackkel
         old_goal_val = stat_settings.get("goal_value", 0.0)
         default_surv_val = stat_settings.get("survival_value", old_goal_val)
         default_surv_type = stat_settings.get("survival_type", "Fix érték (db/Ft)" if default_surv_val > 0 else "Nincs")
@@ -204,7 +205,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 "person_name": person_name, "person_post": person_post, "chart_width": chart_width_val,
                 "ymin": ymin, "ymax": ymax, "ystep": ystep, 
                 "survival_type": survival_type, "survival_value": survival_value, "show_survival": show_survival_line,
-                "goal_type": goal_type, "goal_val_target": goal_value
+                "goal_type": goal_type, "goal_val_target": goal_value,
+                "is_accumulated": is_accumulated
             }
             db["stats"][selected_stat]["inverted"] = is_stat_inverted_check
             save_data(db)
@@ -258,6 +260,17 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             """, height=50)
 
             raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
+            
+            # Akkumulálás alkalmazása, ha be van kapcsolva
+            if is_accumulated and raw_items:
+                running_total = 0.0
+                accumulated_items = []
+                for item in raw_items:
+                    running_total += float(item[1])
+                    note_val = item[2] if len(item) > 2 else ""
+                    accumulated_items.append([item[0], running_total, note_val])
+                raw_items = accumulated_items
+
             y_vals_temp = [item[1] for item in raw_items] if raw_items else []
             
             # Életvonal érték
@@ -500,6 +513,15 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     
                     card_surv_val = s_settings.get("survival_value", s_settings.get("goal_value", 0.0))
                     card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
+                    
+                    if s_settings.get("is_accumulated", False) and card_items:
+                        running_tot = 0.0
+                        acc_card_items = []
+                        for item in card_items:
+                            running_tot += float(item[1])
+                            acc_card_items.append([item[0], running_tot, item[2] if len(item)>2 else ""])
+                        card_items = acc_card_items
+
                     card_y = [item[1] for item in card_items] if card_items else []
                     
                     condition_text, condition_color = calculate_stat_condition(s_data_raw, card_surv_val)
