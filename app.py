@@ -335,7 +335,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         if show_acc_in_brackets and accumulated_vals:
                             acc_val = accumulated_vals[idx]
                             acc_str = f"{int(acc_val):,}".replace(",", " ") if float(acc_val).is_integer() else f"{acc_val}"
-                            formatted_texts.append(f"{v_str}<br><span style='font-size:12px; color:#000000;'>({acc_str} {current_unit})</span>")
+                            formatted_texts.append(f"{v_str}<br><span style='font-size:14px; color:#000000;'>({acc_str} {current_unit})</span>")
                         else:
                             formatted_texts.append(v_str)
 
@@ -356,12 +356,20 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
-                    for x_val, y_val, txt in zip(x_numeric, y_vals, formatted_texts):
-                        fig.add_annotation(
-                            x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, textangle=-90,
-                            font=dict(size=14, color="#000000", family="Arial Black"),
-                            xanchor="center", yanchor="bottom"
-                        )
+                    # Értékek feliratozása (megnövelt betűméret, első elem picit jobbra tolva)
+                    for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
+                        if idx == 0:
+                            fig.add_annotation(
+                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, xshift=14, textangle=-90,
+                                font=dict(size=16, color="#000000", family="Arial Black"),
+                                xanchor="left", yanchor="bottom"
+                            )
+                        else:
+                            fig.add_annotation(
+                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, textangle=-90,
+                                font=dict(size=16, color="#000000", family="Arial Black"),
+                                xanchor="center", yanchor="bottom"
+                            )
 
                     # Név és Poszt bal felül
                     if person_name or person_post:
