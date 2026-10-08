@@ -9,16 +9,16 @@ import streamlit.components.v1 as components
 # ================= OLDAL ALAPBEÁLLÍTÁSAI =================
 st.set_page_config(page_title="Statisztika Kezelő Rendszer", layout="wide", page_icon="📊")
 
-# ================= NYOMTATÁSI CSS (A4 FEKVŐ MÉRETRE OPTIMALIZÁLVA) =================
+# ================= NYOMTATÁSI CSS (EXAKT 1 OLDALAS A4 FEKVŐ OPTIMALIZÁLÁS) =================
 st.markdown("""
     <style>
     @media print {
         @page {
             size: A4 landscape;
-            margin: 5mm;
+            margin: 0mm !important;
         }
         
-        /* Streamlit vezérlők, oldalsáv és gombok elrejtése nyomtatáskor */
+        /* Rejtett Streamlit elemek nyomtatáskor */
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -31,20 +31,24 @@ st.markdown("""
             display: none !important;
         }
         
-        /* Fő konténer kiterjesztése a teljes A4-es lapra */
-        html, body, [data-testid="stAppViewContainer"], .main, .block-container {
+        /* Strict 1 oldal korlátozás - nem enged 2. oldalt generálni */
+        html, body, [data-testid="stAppViewContainer"], .main, .block-container, [data-testid="stVerticalBlock"], .stTabs, [data-testid="stTabContent"] {
             width: 100% !important;
-            height: 100% !important;
+            height: 100vh !important;
+            max-height: 100vh !important;
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
-            overflow: visible !important;
+            overflow: hidden !important;
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
         }
         
-        /* Grafikon teljes kitöltése A4-en levágás nélkül */
+        /* Grafikon kitöltése 1 oldalra méretezve */
         .stPlotlyChart, .js-plotly-plot, .plot-container {
             width: 100% !important;
-            height: 100% !important;
+            height: 95vh !important;
+            margin: 0 auto !important;
             page-break-inside: avoid !important;
         }
     }
@@ -156,7 +160,6 @@ def calculate_stat_condition(data, survival_line=0):
     else:
         return "Bőség / Normál", "green"
 
-# Csütörtöki 14:00-ás zárás szerinti heti periodizáció
 def get_thursday_period_end(dt):
     days_to_thu = 3 - dt.weekday()
     thu_14 = dt.normalize() + pd.Timedelta(days=days_to_thu, hours=14)
@@ -294,7 +297,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             st.markdown("---")
             st.subheader("📋 Adat-táblázat (Dupla kattintással szerkeszthető)")
-            st.caption("💡 Megjegyzés: A Dátum és az Időpont külön oszlopban található, így nem csúszik el az időzóna miatt.")
             
             stat_data_raw = db["stats"][selected_stat]["data"]
             
@@ -563,26 +565,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
-                    # --- BALRA TOLT FEJLÉC ANNOTÁCIÓK (A Y TENGELYEN KÍVÜLRE, TELJESEN BALRA TOLVA) ---
-                    if person_name:
-                        fig.add_annotation(
-                            xref="paper", yref="paper", x=-0.05, y=1.20,
-                            text=f"<b>{person_name}</b>", showarrow=False,
-                            align="left", xanchor="left", yanchor="bottom",
-                            font=dict(size=28, family="Arial Black", color="#000000")
-                        )
-                    if person_post:
-                        fig.add_annotation(
-                            xref="paper", yref="paper", x=-0.05, y=1.10,
-                            text=person_post, showarrow=False,
-                            align="left", xanchor="left", yanchor="bottom",
-                            font=dict(size=20, family="Arial Black", color="#000000")
-                        )
-
+                    # CÉLKITŰZÉS ANNOTÁCIÓ
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=1.05, y=1.15,
+                            xref="paper", yref="paper", x=1.0, y=1.12,
                             text=f"🎯 Cél: {goal_fmt}",
                             showarrow=False,
                             align="right", xanchor="right", yanchor="bottom",
@@ -600,16 +587,25 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     xaxis_range = [-0.3, max(unique_x) + 0.3] if len(unique_x) > 1 else [-0.5, 0.5]
 
+                    # ELEMEK TÖKÉLETES EGYSÉGES CÍMSORBA INTEGRÁLÁSA (NEM CSÚSZIK EL BÁRMILYEN NÉZETBEN)
+                    person_str = f"<b>{person_name}</b>" if person_name else ""
+                    post_str = f"<br>{person_post}" if person_post else ""
+
                     layout_args = dict(
                         title=dict(
-                            text=f"<b>{selected_stat}</b><br><span style='font-size: 22px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
-                            x=0.5, xref="paper", y=1.0, xanchor='center', yanchor='bottom',
-                            font=dict(size=32, color="#000000")
+                            text=(
+                                f"<div style='width:100%; display:flex; justify-content:space-between; align-items:flex-start;'>"
+                                f"<div style='text-align:left; font-size:26px; font-family:Arial Black; color:#000000;'>{person_str}{post_str}</div>"
+                                f"<div style='text-align:center; font-size:32px; font-family:Arial Black; color:#000000;'><b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span></div>"
+                                f"<div style='width:150px;'></div>"
+                                f"</div>"
+                            ),
+                            x=0.0, xref="paper", y=0.98, xanchor='left', yanchor='bottom'
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
                         autosize=True,
-                        height=680,
-                        margin=dict(t=160, b=120, l=90, r=60),
+                        height=620,
+                        margin=dict(t=150, b=100, l=80, r=40),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
                             tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
@@ -845,7 +841,7 @@ elif selected_menu == "📖 Eseménynapló":
         df_events.columns = ["Dátum", "Statisztika neve", "Érték", "Esemény / Megjegyzés"]
         st.dataframe(df_events, use_container_width=True, hide_index=True)
     else:
-        st.info("Még nincsenek rögzített események vagy megjegyzések a statisztikához.")
+        st.info("Még nincsenek rögzített események vagy megjegyzések a statisztikákhoz.")
 
 # 5. ÚJ STATISZTIKA LÉTREHOZÁSA
 elif selected_menu == "➕ Új Statisztika Létrehozása":
