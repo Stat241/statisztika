@@ -38,7 +38,8 @@ def fmt_num(val, unit=""):
     else:
         s = f"{val}".replace(",", ".")
     if unit:
-        return f"{s}.{unit}."
+        clean_unit = unit.strip(".")
+        return f"{s}.{clean_unit}."
     return s
 
 def load_data():
@@ -185,7 +186,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         st.sidebar.subheader("📅 Időszakos összesítés")
         indiv_agg = st.sidebar.selectbox("Grafikon nézet:", ["Napi adatok", "Heti (Csütörtöki zárás 14:00)", "Havi összesítés"], key="indiv_agg_view")
 
-        # Aktuális nézethez tartozó külön beállítások (Méretezés, Életvonal, Cél)
         mode_settings = stat_settings.get(indiv_agg, {})
         
         default_ymin = mode_settings.get("ymin", "")
@@ -199,7 +199,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         default_goal_type = mode_settings.get("goal_type", "Nincs")
         default_goal_val = mode_settings.get("goal_val_target", 0.0)
 
-        # Skálázás/Méretezés beállítása az AKTUÁLIS nézethez
         st.sidebar.markdown("---")
         st.sidebar.subheader(f"📐 Méretezés & Skála ({indiv_agg})")
         col_min, col_max, col_step = st.sidebar.columns(3)
@@ -207,20 +206,17 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         with col_max: ymax = st.text_input("Max", value=default_ymax, key=f"ymax_{indiv_agg}")
         with col_step: ystep = st.text_input("Lépés", value=default_ystep, key=f"ystep_{indiv_agg}")
 
-        # Akkumulált összeg megjelenítése zárójelben beállítások
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
         show_acc_in_brackets = st.sidebar.checkbox("Akkumulált összeg megjelenítése a pontok alatt", value=stat_settings.get("show_acc_in_brackets", False))
         initial_accumulated_val = st.sidebar.number_input("Kezdő alap:", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
         
-        # Életvonal az AKTUÁLIS nézethez
         st.sidebar.markdown("---")
         st.sidebar.subheader(f"🛡️ Életvonal ({indiv_agg})")
         survival_type = st.sidebar.selectbox("Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)"], index=0 if default_surv_type == "Nincs" else 1, key=f"surv_type_{indiv_agg}")
         survival_value = st.sidebar.number_input("Életvonal értéke:", value=float(default_surv_val), step=1.0, key=f"surv_val_{indiv_agg}")
         show_survival_line = st.sidebar.checkbox("Életvonal rajzolása a grafikonra", value=default_show_surv, key=f"show_surv_{indiv_agg}")
 
-        # Célkitűzés az AKTUÁLIS nézethez
         st.sidebar.markdown("---")
         st.sidebar.subheader(f"🎯 Célkitűzés ({indiv_agg})")
         goal_type = st.sidebar.selectbox("Cél típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0 if default_goal_type=="Nincs" else (1 if default_goal_type=="Fix érték (db/Ft)" else 2), key=f"goal_type_{indiv_agg}")
@@ -438,7 +434,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             align="left", xanchor="left", yanchor="bottom", font=dict(family="Arial Black", color="#000000")
                         )
 
-                    # Cél kiírása a jobb felső sarokba (Fejlesztési Hitelközpont arany arculati színével: #C5A059)
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
