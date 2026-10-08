@@ -15,17 +15,16 @@ st.markdown("""
     @media print {
         @page { 
             size: A4 landscape; 
-            margin: 0mm; 
+            margin: 10mm; 
         }
         body, html {
             background-color: #ffffff !important;
-            width: 100vw !important;
-            height: 100vh !important;
+            width: 297mm !important;
+            height: 210mm !important;
             margin: 0 !important;
             padding: 0 !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
-            overflow: hidden !important;
         }
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
@@ -39,32 +38,26 @@ st.markdown("""
         body * {
             visibility: hidden !important;
         }
-        .js-plotly-plot, .js-plotly-plot *, .js-plotly-plot svg, .js-plotly-plot .main-svg, .js-plotly-plot .svg-container {
+        .stPlotlyChart, .stPlotlyChart *, .js-plotly-plot, .js-plotly-plot *, .js-plotly-plot svg, .js-plotly-plot .main-svg, .js-plotly-plot .svg-container {
             visibility: visible !important;
         }
-        .js-plotly-plot {
-            position: fixed !important;
-            left: 8mm !important;
-            top: 8mm !important;
-            width: calc(100vw - 16mm) !important;
-            height: calc(100vh - 16mm) !important;
-            max-width: none !important;
-            max-height: none !important;
+        .stPlotlyChart {
+            position: absolute !important;
+            left: 10mm !important;
+            top: 10mm !important;
+            width: 277mm !important;
+            height: 190mm !important;
+            max-width: 277mm !important;
+            max-height: 190mm !important;
             border: 4px solid #000000 !important;
             box-sizing: border-box !important;
-            padding: 10mm !important;
+            padding: 5mm !important;
             background: #ffffff !important;
             margin: 0 !important;
-            page-break-inside: avoid !important;
-            page-break-after: avoid !important;
         }
-        .js-plotly-plot .svg-container,
-        .js-plotly-plot .main-svg,
-        .js-plotly-plot svg {
+        .js-plotly-plot, .js-plotly-plot .svg-container {
             width: 100% !important;
             height: 100% !important;
-            max-width: 100% !important;
-            max-height: 100% !important;
         }
     }
     </style>
