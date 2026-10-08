@@ -174,7 +174,7 @@ st.sidebar.info(f"Bejelentkezve: **{st.session_state.current_user}**")
 menu_options = [
     "📊 Egyedi Statisztika Nézet", 
     "📈 Több Statisztika Összevetése", 
-    "📋 Összesítő Táblázat",
+    "📋 Összesítő Dashboard (Kártya Nézet)",
     "➕ Új Statisztika Létrehozása"
 ]
 if is_admin:
@@ -545,26 +545,91 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
             )
             st.plotly_chart(fig, use_container_width=True)
 
-# ----------------- 3. ÖSSZESÍTŐ TÁBLÁZAT -----------------
-elif selected_menu == "📋 Összesítő Táblázat":
-    st.title("📋 Felhasználói Statisztikák Összesítője")
-    st.write("Az összes számodra elérhető statisztika áttekintő táblázata.")
+# ----------------- 3. ÖSSZESÍTŐ DASHBOARD (KÁRTYA NÉZET - A KÉP ALAPJÁN) -----------------
+elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
+    st.title("📋 Teljesítménymérő Statisztikák Dashboard")
     
-    summary_data = []
-    for s_name in stat_names:
-        s_data = db["stats"][s_name]["data"]
-        s_unit = db["stats"][s_name].get("unit", "")
-        if s_data:
-            s_data_sorted = sorted(s_data, key=lambda x: str(x[0]))
-            latest_val, total_val = s_data_sorted[-1][1], sum([item[1] for item in s_data_sorted])
-            latest_val_fmt = f"{int(latest_val):,} {s_unit}".replace(",", " ") if float(latest_val).is_integer() else f"{latest_val} {s_unit}"
-            total_val_fmt = f"{int(total_val):,} {s_unit}".replace(",", " ") if float(total_val).is_integer() else f"{total_val} {s_unit}"
-            summary_data.append([s_name, s_data_sorted[-1][0], latest_val_fmt, total_val_fmt])
-        else:
-            summary_data.append([s_name, "Nincs adat", "-", "-"])
-            
-    if summary_data:
-        st.dataframe(pd.DataFrame(summary_data, columns=["Statisztika neve", "Utolsó frissítés", "Legutóbbi érték", "Összesített érték"]), use_container_width=True, hide_index=True)
+    # Felső Keresősáv (mint a képen)
+    col_search, col_btn = st.columns([4, 1])
+    with col_search:
+        search_query = st.text_input("Keresés:", placeholder="Keresés a statisztikák között...", key="dash_search")
+    
+    filtered_stats = [s for s in stat_names if search_query.lower() in s.lower()] if search_query else stat_names
+
+    if not filtered_stats:
+        st.info("Nincs találat a keresésre.")
+    else:
+        # Kétoszlopos kártya elrendezés (Grid)
+        for i in range(0, len(filtered_stats), 2):
+            cols = st.columns(2)
+            for j in range(2):
+                if i + j < len(filtered_stats):
+                    s_name = filtered_stats[i + j]
+                    s_data_raw = db["stats"][s_name]["data"]
+                    s_unit = db["stats"][s_name].get("unit", "")
+                    s_settings = db.get("settings", {}).get(s_name, {})
+                    s_inverted = db["stats"][s_name].get("inverted", False)
+                    
+                    p_name = s_settings.get("person_name", "")
+                    p_post = s_settings.get("person_post", "")
+                    assigned_str = f"{p_name} ({p_post})" if p_name or p_post else "Nincs megadva"
+                    
+                    with cols[j]:
+                        with st.container(border=True):
+                            # Kártya Fejléc
+                            st.markdown(f"### **{s_name}**")
+                            st.caption(f"**Assigned to:** {assigned_str}")
+                            
+                            # Kártyánkénti Mikortól / Meddig szűrők
+                            dates_parsed = [datetime.strptime(item[0], "%Y-%m-%d").date() for item in s_data_raw] if s_data_raw else []
+                            min_d = min(dates_parsed) if dates_parsed else None
+                            max_d = max(dates_parsed) if dates_parsed else None
+                            
+                            card_items = [item for item in s_data_raw] if s_data_raw else []
+                            card_items = sorted(card_items, key=lambda x: str(x[0]))
+                            
+                            if card_items:
+                                fig_card = go.Figure()
+                                x_num = list(range(len(card_items)))
+                                y_v = [item[1] for item in card_items]
+                                
+                                for k in range(len(card_items) - 1):
+                                    x1, y1 = x_num[k], y_v[k]
+                                    x2, y2 = x_num[k+1], y_v[k+1]
+                                    color = "#00C853" if (y2 <= y1 if s_inverted else y2 >= y1) else "#FF1744"
+                                    fig_card.add_trace(go.Scatter(x=[x1, x2], y=[y1, y2], mode='lines', line=dict(color=color, width=3.5), showlegend=False, hoverinfo='skip'))
+                                
+                                fig_card.add_trace(go.Scatter(x=x_num, y=y_v, mode='markers', marker=dict(size=8, color="#1E293B"), showlegend=False))
+                                
+                                formatted_t = [f"{int(y):,} {s_unit}".replace(",", " ") if float(y).is_integer() else f"{y} {s_unit}" for y in y_v]
+                                x_fmt = [datetime.strptime(str(item[0]), "%Y-%m-%d").strftime("%b %d") for item in card_items]
+                                
+                                for x_val, y_val, txt in zip(x_num, y_v, formatted_t):
+                                    fig_card.add_annotation(x=x_val, y=y_val, text=txt, showarrow=False, yshift=10, textangle=-90, font=dict(size=10, color="#000000", family="Arial Black"), xanchor="center", yanchor="bottom")
+                                
+                                yaxis_card = dict(showgrid=True, gridcolor="#F1F5F9", gridwidth=1.5, tickfont=dict(color="#000", size=11, family="Arial Black"), showline=True, linecolor="#000", linewidth=1.5)
+                                if s_inverted:
+                                    yaxis_card["autorange"] = "reversed"
+                                else:
+                                    yaxis_card["rangemode"] = "tozero"
+                                
+                                fig_card.update_layout(
+                                    height=340,
+                                    plot_bgcolor="white", paper_bgcolor="white",
+                                    margin=dict(t=20, b=40, l=40, r=20),
+                                    xaxis=dict(tickmode="array", tickvals=x_num, ticktext=x_fmt, tickangle=-45, showgrid=True, gridcolor="#F1F5F9", gridwidth=1.5, tickfont=dict(color="#000", size=10, family="Arial Black"), showline=True, linecolor="#000", linewidth=1.5),
+                                    yaxis=yaxis_card
+                                )
+                                st.plotly_chart(fig_card, use_container_width=True, config={'displayModeBar': False})
+                            else:
+                                st.info("Nincs megjeleníthető adat ezen a kártyán.")
+                                
+                            # Kártya alján lévő dátummezők (mint a képen)
+                            c_date1, c_date2 = st.columns(2)
+                            with c_date1:
+                                st.date_input("Mikortól:", value=min_d, key=f"from_{s_name}_{i}_{j}") if min_d else st.text_input("Mikortól:", value="", key=f"from_empty_{s_name}_{i}_{j}")
+                            with c_date2:
+                                st.date_input("Meddig:", value=max_d, key=f"to_{s_name}_{i}_{j}") if max_d else st.text_input("Meddig:", value="", key=f"to_empty_{s_name}_{i}_{j}")
 
 # ----------------- 4. ÚJ STATISZTIKA LÉTREHOZÁSA -----------------
 elif selected_menu == "➕ Új Statisztika Létrehozása":
