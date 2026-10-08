@@ -51,7 +51,7 @@ def load_data():
     return {
         "groups": ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"],
         "stats": {
-            "Bruttó Beérkezett Bevétel": {
+            "Bruttó Beérkezett Bevétel (Heti)": {
                 "unit": "Ft",
                 "group": "Pénzügy",
                 "inverted": False,
@@ -69,16 +69,14 @@ def load_data():
                     ["2026-10-01", 945000, ""]
                 ]
             },
-            "Ügyfelek száma": {
-                "unit": "fő",
-                "group": "Értékesítés",
+            "Bruttó Beérkezett Bevétel (Havi)": {
+                "unit": "Ft",
+                "group": "Pénzügy",
                 "inverted": False,
                 "data": [
-                    ["2026-08-08", 5, "Első körös hívások"],
-                    ["2026-08-15", 12, ""],
-                    ["2026-08-25", 18, "Ajánlások"],
-                    ["2026-08-30", 25, ""],
-                    ["2026-09-13", 34, "Marketing akció"]
+                    ["2026-07-31", 747500, "Júliusi zárás"],
+                    ["2026-08-31", 2863299, "Augusztusi zárás"],
+                    ["2026-09-30", 7462200, "Szeptemberi zárás"]
                 ]
             }
         },
@@ -178,62 +176,41 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
-        # Időszakos összesítés (Napi / Heti Csütörtök / Havi)
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("📅 Időszakos összesítés")
-        indiv_agg = st.sidebar.selectbox("Grafikon nézet / Aggregáció:", ["Napi adatok", "Heti (Csütörtöki zárás)", "Havi összesítés"], key="indiv_agg_view")
-
-        # Aktuális nézethez tartozó beállítások lekérése (visszafelé kompatibilis fallbackkel)
-        mode_settings = stat_settings.get(indiv_agg, {})
-        default_surv_type = mode_settings.get("survival_type", stat_settings.get("survival_type", "Nincs"))
-        default_surv_val = mode_settings.get("survival_value", stat_settings.get("survival_value", stat_settings.get("goal_value", 0.0)))
-        default_show_surv = mode_settings.get("show_survival", stat_settings.get("show_survival", True))
-
-        default_goal_type = mode_settings.get("goal_type", stat_settings.get("goal_type", "Nincs"))
-        default_goal_val = mode_settings.get("goal_val_target", stat_settings.get("goal_val_target", 0.0))
-
         # Akkumulált / Halmozott összeg megjelenítése zárójelben beállítások
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
         show_acc_in_brackets = st.sidebar.checkbox("Akkumulált összeg megjelenítése a pontok alatt", value=stat_settings.get("show_acc_in_brackets", False))
         initial_accumulated_val = st.sidebar.number_input("Kezdő alap:", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
         
-        # Életvonal és Célkitűzés beállítások az adott nézethez
+        # Életvonal és Célkitűzés beállítások biztonságos fallbackkel
+        old_goal_val = stat_settings.get("goal_value", 0.0)
+        default_surv_val = stat_settings.get("survival_value", old_goal_val)
+        default_surv_type = stat_settings.get("survival_type", "Fix érték (db/Ft)" if default_surv_val > 0 else "Nincs")
+        
         st.sidebar.markdown("---")
-        st.sidebar.subheader(f"🛡️ Életvonal ({indiv_agg})")
-        survival_type = st.sidebar.selectbox("Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)"], index=0 if default_surv_type == "Nincs" else 1, key=f"surv_type_{indiv_agg}")
-        survival_value = st.sidebar.number_input("Életvonal értéke:", value=float(default_surv_val), step=1.0, key=f"surv_val_{indiv_agg}")
-        show_survival_line = st.sidebar.checkbox("Életvonal rajzolása a grafikonra", value=default_show_surv, key=f"show_surv_{indiv_agg}")
+        st.sidebar.subheader("🛡️ Életvonal (Túlélési határ)")
+        survival_type = st.sidebar.selectbox("Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)"], index=0 if default_surv_type == "Nincs" else 1, key="surv_type")
+        survival_value = st.sidebar.number_input("Életvonal értéke:", value=float(default_surv_val), step=1.0)
+        show_survival_line = st.sidebar.checkbox("Életvonal rajzolása a grafikonra", value=stat_settings.get("show_survival", True))
 
         st.sidebar.markdown("---")
-        st.sidebar.subheader(f"🎯 Célkitűzés ({indiv_agg})")
-        goal_type = st.sidebar.selectbox("Cél típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0 if default_goal_type=="Nincs" else (1 if default_goal_type=="Fix érték (db/Ft)" else 2), key=f"goal_type_{indiv_agg}")
-        goal_value = st.sidebar.number_input("Cél mértéke:", value=float(default_goal_val), step=1.0, key=f"goal_val_{indiv_agg}")
+        st.sidebar.subheader("🎯 Célkitűzés")
+        goal_type = st.sidebar.selectbox("Cél típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0, key="goal_type")
+        goal_value = st.sidebar.number_input("Cél mértéke:", value=float(stat_settings.get("goal_val_target", 0.0)), step=1.0)
 
         if st.sidebar.button("💾 Beállítások Mentése"):
             if "settings" not in db: db["settings"] = {}
-            if selected_stat not in db["settings"]: db["settings"][selected_stat] = {}
-            
-            db["settings"][selected_stat]["person_name"] = person_name
-            db["settings"][selected_stat]["person_post"] = person_post
-            db["settings"][selected_stat]["ymin"] = ymin
-            db["settings"][selected_stat]["ymax"] = ymax
-            db["settings"][selected_stat]["ystep"] = ystep
-            db["settings"][selected_stat]["show_acc_in_brackets"] = show_acc_in_brackets
-            db["settings"][selected_stat]["initial_accumulated_val"] = initial_accumulated_val
-            
-            # Nézetenkénti mentés
-            db["settings"][selected_stat][indiv_agg] = {
-                "survival_type": survival_type,
-                "survival_value": survival_value,
-                "show_survival": show_survival_line,
-                "goal_type": goal_type,
-                "goal_val_target": goal_value
+            db["settings"][selected_stat] = {
+                "person_name": person_name, "person_post": person_post,
+                "ymin": ymin, "ymax": ymax, "ystep": ystep, 
+                "survival_type": survival_type, "survival_value": survival_value, "show_survival": show_survival_line,
+                "goal_type": goal_type, "goal_val_target": goal_value,
+                "show_acc_in_brackets": show_acc_in_brackets,
+                "initial_accumulated_val": initial_accumulated_val
             }
-
             db["stats"][selected_stat]["inverted"] = is_stat_inverted_check
             save_data(db)
-            st.sidebar.success(f"Beállítások elmentve ({indiv_agg})!")
+            st.sidebar.success("Beállítások elmentve!")
 
         # Fülek használata
         tab_chart, tab_table = st.tabs(["📊 Grafikon Nézet", "📋 Adatkezelés & Táblázat"])
@@ -284,24 +261,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             """, height=50)
 
             stat_data_raw = db["stats"][selected_stat]["data"]
-            
-            # Aggregáció alkalmazása a választott nézet alapján
-            if stat_data_raw:
-                df_temp = pd.DataFrame([[item[0], item[1], item[2] if len(item)>2 else ""] for item in stat_data_raw], columns=["Dátum", "Érték", "Megjegyzés"])
-                df_temp["Dátum"] = pd.to_datetime(df_temp["Dátum"])
-                df_temp["Érték"] = pd.to_numeric(df_temp["Érték"])
-                df_temp = df_temp.sort_values("Dátum").set_index("Dátum")
-                
-                if indiv_agg == "Heti (Csütörtöki zárás)":
-                    res_df = df_temp.resample("W-THU").agg({"Érték": "sum"}).reset_index()
-                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), ""] for _, row in res_df.iterrows()]
-                elif indiv_agg == "Havi összesítés":
-                    res_df = df_temp.resample("ME").agg({"Érték": "sum"}).reset_index()
-                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), ""] for _, row in res_df.iterrows()]
-                else:
-                    raw_items = sorted(stat_data_raw, key=lambda x: str(x[0]))
-            else:
-                raw_items = []
+            raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
             
             # Akkumulált értékek pontos kiszámítása futó összegként
             accumulated_vals = []
@@ -313,9 +273,10 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             y_vals_temp = [item[1] for item in raw_items] if raw_items else []
             
-            # Életvonal és cél értékek az aktuális nézetből
+            # Életvonal érték
             calc_survival_val = survival_value if survival_type == "Fix érték (db/Ft)" else 0.0
 
+            # Cél érték
             calc_goal_val = 0.0
             if goal_type == "Fix érték (db/Ft)":
                 calc_goal_val = goal_value
@@ -432,7 +393,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     layout_args = dict(
                         title=dict(
-                            text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
+                            text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
                             x=0.5, xref="paper", xanchor='center', yanchor='top',
                             font=dict(size=38, color="#000000")
                         ),
