@@ -435,7 +435,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         pass
 
                     fig.update_layout(**layout_args)
-                    st.plotly_chart(fig, use_container_width=False, scrolling=True)
+                    st.plotly_chart(fig, use_container_width=False)
 
 # 2. TÖBB STATISZTIKA ÖSSZEVETÉSE
 elif selected_menu == "📈 Több Statisztika Összevetése":
