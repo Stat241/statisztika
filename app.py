@@ -126,7 +126,7 @@ def save_archive(archive_data):
     with open(ARCHIVE_FILE, "w", encoding="utf-8") as f:
         json.dump(archive_data, f, ensure_ascii=False, indent=2)
 
-# Állapot-meghatározó logika (Célvonal alatti rész = Nem létezés / Vészhelyzet)
+# Állapot-meghatározó logika (Életvonal / Célvonal alatti rész = Nem létezés / Vészhelyzet)
 def calculate_stat_condition(data, ref_val=0):
     if not data or len(data) < 1:
         return "Normál", "gray"
@@ -135,7 +135,7 @@ def calculate_stat_condition(data, ref_val=0):
     last_val = sorted_d[-1][1]
     
     if ref_val > 0 and last_val < ref_val:
-        return "Nem létezés (Cél alatt)", "red"
+        return "Nem létezés (Életvonal alatt)", "red"
     
     if len(data) < 2:
         return "Normál", "blue"
@@ -159,7 +159,6 @@ if "current_user" not in st.session_state: st.session_state.current_user = None
 USERS = load_users()
 db = st.session_state.db
 
-# Biztosítjuk, hogy a 'groups' kulcs létezzen az adatbázisban
 if "groups" not in db:
     db["groups"] = ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
     save_data(db)
@@ -188,7 +187,6 @@ if not st.session_state.authenticated:
     check_login()
     st.stop()
 
-# Jogosultságok és csoportok szűrése
 current_user_info = USERS.get(st.session_state.current_user, {"allowed_stats": [], "allowed_groups": []})
 allowed_stat_names = current_user_info["allowed_stats"]
 allowed_groups = current_user_info["allowed_groups"]
@@ -238,7 +236,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     else:
         selected_stat = st.sidebar.selectbox("Választott statisztika:", stat_names)
         
-        st.sidebar.subheader("⚙️ Grafikon & Cél Beállítások")
+        st.sidebar.subheader("⚙️ Grafikon & Életvonal Beállítások")
         current_unit = db["stats"][selected_stat].get("unit", "")
         stat_group = db["stats"][selected_stat].get("group", "Egyéb")
         stat_settings = db.get("settings", {}).get(selected_stat, {})
@@ -256,12 +254,12 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
-        # Cél beállítások
+        # Cél és Életvonal beállítások
         st.sidebar.markdown("---")
-        st.sidebar.subheader("🎯 Célkitűzés")
-        goal_type = st.sidebar.selectbox("Cél típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0)
-        goal_value = st.sidebar.number_input("Cél mértéke:", value=float(stat_settings.get("goal_value", 0.0)), step=1.0)
-        show_ref_line = st.sidebar.checkbox("Célvonal (Referencia) rajzolása", value=stat_settings.get("show_ref", True))
+        st.sidebar.subheader("🎯 Célkitűzés & Életvonal")
+        goal_type = st.sidebar.selectbox("Cél / Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0)
+        goal_value = st.sidebar.number_input("Érték mértéke:", value=float(stat_settings.get("goal_value", 0.0)), step=1.0)
+        show_ref_line = st.sidebar.checkbox("Életvonal rajzolása a grafikonra", value=stat_settings.get("show_ref", True))
 
         if st.sidebar.button("💾 Beállítások Mentése"):
             if "settings" not in db: db["settings"] = {}
@@ -307,43 +305,30 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             save_data(db)
                             st.rerun()
 
-        # JOBB OLDAL: Interaktív Grafikon + Cél kiírás jobb oldalon
+        # JOBB OLDAL: Interaktív Grafikon és alatta a Célkitűzés doboz
         with col_right:
-            # Fejléc sor nyomtatás gombbal és Jobb oldali Cél dobozzal
-            col_print, col_goal_box = st.columns([1, 1.5])
-            with col_print:
-                components.html("""
-                    <button onclick="window.parent.print()" style="
-                        padding: 10px 20px; 
-                        font-size: 15px; 
-                        background-color: #000000; 
-                        color: white; 
-                        border: none; 
-                        border-radius: 8px; 
-                        cursor: pointer;
-                        font-weight: bold;
-                        box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
-                    ">🖨️ Nyomtatás A4-re</button>
-                """, height=50)
-            
-            # Cél értékének kiszámítása a jobb oldali panelhez
-            calculated_ref_val = 0.0
+            components.html("""
+                <button onclick="window.parent.print()" style="
+                    padding: 10px 20px; 
+                    font-size: 15px; 
+                    background-color: #000000; 
+                    color: white; 
+                    border: none; 
+                    border-radius: 8px; 
+                    cursor: pointer;
+                    font-weight: bold;
+                    box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
+                ">🖨️ Nyomtatás A4-re</button>
+            """, height=50)
+
+            # Értékek előkészítése
             raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
             y_vals_temp = [item[1] for item in raw_items] if raw_items else []
+            calculated_ref_val = 0.0
             if goal_type == "Fix érték (db/Ft)":
                 calculated_ref_val = goal_value
             elif goal_type == "Százalékos növekedés (%)" and len(y_vals_temp) > 0:
                 calculated_ref_val = y_vals_temp[-1] * (1 + goal_value / 100)
-
-            with col_goal_box:
-                if goal_type != "Nincs" and calculated_ref_val > 0:
-                    val_fmt = f"{int(calculated_ref_val):,}".replace(",", " ") if float(calculated_ref_val).is_integer() else f"{calculated_ref_val}"
-                    st.markdown(f"""
-                        <div style="background-color: #F8FAFC; border: 2px dashed #E2E8F0; padding: 10px 15px; border-radius: 8px; text-align: right;">
-                            <span style="font-size: 14px; color: #64748B;"><b>Célkitűzés ({goal_type}):</b></span><br>
-                            <span style="font-size: 20px; color: #EF4444; font-weight: bold;">🎯 {val_fmt} {current_unit}</span>
-                        </div>
-                    """, unsafe_allow_html=True)
 
             if stat_data_raw:
                 date_range_str = ""
@@ -376,7 +361,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line=dict(color=color, width=6), showlegend=False, hoverinfo='skip'
                         ))
 
-                    # Célvonal (Referencia) és Nem Létezés zóna alatta
+                    # Életvonal rajzolása a grafikonra
                     if show_ref_line and goal_type != "Nincs" and calculated_ref_val > 0:
                         val_str = f"{int(calculated_ref_val):,}".replace(",", " ") if float(calculated_ref_val).is_integer() else f"{calculated_ref_val}"
                         fig.add_hline(
@@ -384,7 +369,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line_dash="solid",
                             line_color="#EF4444",
                             line_width=4,
-                            annotation_text=f" Cél: {val_str} {current_unit}",
+                            annotation_text=f" Életvonal: {val_str} {current_unit}",
                             annotation_position="bottom right",
                             annotation_font=dict(size=18, color="#EF4444", family="Arial Black")
                         )
@@ -456,6 +441,16 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     fig.update_layout(**layout_args)
                     st.plotly_chart(fig, use_container_width=False)
+
+            # Célkitűzés doboz a grafikon alatt
+            if goal_type != "Nincs" and calculated_ref_val > 0:
+                val_fmt = f"{int(calculated_ref_val):,}".replace(",", " ") if float(calculated_ref_val).is_integer() else f"{calculated_ref_val}"
+                st.markdown(f"""
+                    <div style="background-color: #F8FAFC; border: 2px dashed #CBD5E1; padding: 12px 20px; border-radius: 8px; margin-top: 10px;">
+                        <span style="font-size: 14px; color: #475569;"><b>🎯 Aktuális Célkitűzés ({goal_type}):</b></span>
+                        <span style="font-size: 20px; color: #EF4444; font-weight: bold; float: right;">{val_fmt} {current_unit}</span>
+                    </div>
+                """, unsafe_allow_html=True)
 
 # 2. TÖBB STATISZTIKA ÖSSZEVETÉSE
 elif selected_menu == "📈 Több Statisztika Összevetése":
@@ -561,7 +556,6 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     p_post = s_settings.get("person_post", "")
                     assigned_str = f"{p_name} ({p_post})" if p_name or p_post else "Nincs megadva"
                     
-                    # Cél kiszámítása a kártyához
                     card_goal_type = s_settings.get("goal_type", "Nincs")
                     card_goal_val = s_settings.get("goal_value", 0.0)
                     card_ref = 0.0
@@ -598,7 +592,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                     color = "#00C853" if (y2 <= y1 if s_inverted else y2 >= y1) else "#FF1744"
                                     fig_card.add_trace(go.Scatter(x=[x1, x2], y=[y1, y2], mode='lines', line=dict(color=color, width=3.5), showlegend=False, hoverinfo='skip'))
                                 
-                                # Célvonal a kártyán is
+                                # Életvonal a kártyán is
                                 if card_ref > 0:
                                     fig_card.add_hline(y=card_ref, line_dash="dash", line_color="#EF4444", line_width=2)
 
@@ -691,7 +685,7 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
 elif selected_menu == "⚙️ Adminisztráció & Archívum" and is_admin:
     st.title("⚙️ Rendszer Adminisztráció")
     
-    # Külön szekció a Csoportok / Részlegek kezelésére
+    # Csoportok / Részlegek Kezelése (Létrehozás és Törlés)
     st.subheader("📁 Csoportok / Részlegek Kezelése")
     col_g1, col_g2 = st.columns(2)
     with col_g1:
@@ -704,9 +698,21 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum" and is_admin:
                 st.rerun()
             else:
                 st.warning("Add meg a nevet vagy már létezik ilyen részleg!")
+                
     with col_g2:
-        st.markdown("#### Meglévő részlegek listája:")
-        st.write(", ".join(db.get("groups", [])))
+        st.markdown("#### Meglévő részlegek törlése")
+        current_groups_list = db.get("groups", [])
+        group_to_delete = st.selectbox("Törlendő részleg:", options=current_groups_list if current_groups_list else [""])
+        if st.button("🗑️ Részleg Törlése") and group_to_delete:
+            if group_to_delete in db["groups"]:
+                db["groups"].remove(group_to_delete)
+                # Opcionálisan átrakhatjuk a hozzá tartozó statisztikákat az "Egyéb"-be
+                for s_key in db["stats"]:
+                    if db["stats"][s_key].get("group") == group_to_delete:
+                        db["stats"][s_key]["group"] = "Egyéb"
+                save_data(db)
+                st.success(f"'{group_to_delete}' részleg törölve!")
+                st.rerun()
 
     st.markdown("---")
     st.subheader("👥 Felhasználók & Jogosultságok Kezelése")
