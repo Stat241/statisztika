@@ -8,28 +8,42 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
-# ================= Trebuchet MS BETŰTÍPUS ÉS NYOMTATÁSI CSS =================
+# ================= NYOMTATÁSI CSS (A4 Fekvő formátumra igazítva, csak a grafikonra) =================
+# A betűtípus globális felülírását kivettük, így a Streamlit ikonok újra működnek!
 st.markdown("""
     <style>
-    * {
-        font-family: 'Trebuchet MS', sans-serif !important;
-    }
     @media print {
-        @page { size: A4 landscape; margin: 5mm; }
-        
-        /* Nyomtatáskor csak magát a grafikont mutatjuk */
-        body * {
-            visibility: hidden !important;
+        @page { size: A4 landscape; margin: 8mm; }
+        [data-testid="stSidebar"], 
+        [data-testid="stHeader"],
+        [data-testid="stToolbar"],
+        .stForm, 
+        button, 
+        iframe,
+        .no-print {
+            display: none !important;
         }
-        .js-plotly-plot, .js-plotly-plot * {
-            visibility: visible !important;
+        /* Bal oldali adatbeviteli oszlop elrejtése nyomtatáskor */
+        div[data-testid="stHorizontalBlock"] > div:first-child {
+            display: none !important;
         }
-        .js-plotly-plot {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
+        /* Jobb oldali grafikon oszlop teljes szélességűvé tétele nyomtatáskor */
+        div[data-testid="stHorizontalBlock"] > div:last-child {
             width: 100% !important;
-            height: auto !important;
+            flex: 1 1 100% !important;
+            max-width: 100% !important;
+        }
+        .main .block-container {
+            padding: 0 !important;
+            margin: 0 !important;
+            max-width: 100% !important;
+        }
+        .js-plotly-plot, .plotly, .plot-container {
+            width: 100% !important;
+        }
+        .js-plotly-plot .plotly .main-svg {
+            shape-rendering: geometricPrecision !important;
+            text-rendering: geometricPrecision !important;
         }
     }
     </style>
@@ -69,7 +83,7 @@ if "current_user" not in st.session_state:
     st.session_state.current_user = None
 
 def check_login():
-    st.markdown("<h2 style='text-align: center; font-family: \"Trebuchet MS\";'>🔐 Bejelentkezés a Statisztika Rendszerbe</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>🔐 Bejelentkezés a Statisztika Rendszerbe</h2>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         with st.form("login_form"):
@@ -287,7 +301,7 @@ with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
 with st.sidebar.expander("➕ Új statisztika létrehozása"):
     new_stat_name = st.text_input("Statisztika neve:", placeholder="pl. Ügyfelek száma")
     new_stat_unit = st.text_input("Mértékegység / Kategória:", placeholder="pl. fő, db, Ft")
-    is_new_inverted = st.checkbox("Fordított statisztika (a csökkenés a jó / zöld)", key="new_stat_inverted_checkbox")
+    is_new_inverted = st.checkbox("Fordított statisztika (a 0 felül van és lefelé nő)", key="new_stat_inverted_checkbox")
     if st.button("Létrehozás"):
         if new_stat_name:
             if new_stat_name not in db["stats"]:
@@ -302,7 +316,8 @@ with st.sidebar.expander("➕ Új statisztika létrehozása"):
             else:
                 st.warning("Ilyen nevű statisztika már létezik!")
 
-stat_options = ["📋 ÖSSZESÍTŐ NÉZET"] + stat_names
+# OPCIÓK KIEGÉSZÍTÉSE AZ ÖSSZEVETŐ NÉZETTEL
+stat_options = ["📋 ÖSSZESÍTŐ NÉZET", "📈 TÖBB STATISZTIKA ÖSSZEVETÉSE"] + stat_names
 
 if "selected_stat_override" in st.session_state and st.session_state["selected_stat_override"] in stat_options:
     default_stat_idx = stat_options.index(st.session_state["selected_stat_override"])
@@ -312,7 +327,7 @@ else:
 selected_stat = st.sidebar.selectbox("Aktív Statisztika Szűrése / Kiválasztása:", stat_options, index=default_stat_idx)
 st.session_state["selected_stat_override"] = selected_stat
 
-if selected_stat != "📋 ÖSSZESÍTŐ NÉZET":
+if selected_stat not in ["📋 ÖSSZESÍTŐ NÉZET", "📈 TÖBB STATISZTIKA ÖSSZEVETÉSE"]:
     if st.sidebar.button("📦 Jelenlegi statisztika archiválása"):
         archive_db = load_archive()
         archive_db[selected_stat] = db["stats"][selected_stat]
@@ -349,7 +364,98 @@ if selected_stat == "📋 ÖSSZESÍTŐ NÉZET":
         
     st.stop()
 
-# ================= 2. EGYEDI STATISZTIKA NÉZET =================
+# ================= 2. TÖBB STATISZTIKA ÖSSZEVETÉSE =================
+if selected_stat == "📈 TÖBB STATISZTIKA ÖSSZEVETÉSE":
+    st.title("📈 Statisztikák Összevetése")
+    st.write("Válaszd ki azokat a statisztikákat, amelyeket egyetlen közös ábrán szeretnél látni. Ebben a nézetben minden statisztika saját színt kap.")
+    
+    selected_multi_stats = st.multiselect("Válassz statisztikákat az összevetéshez:", stat_names, default=stat_names[:2] if len(stat_names)>=2 else stat_names)
+    
+    if selected_multi_stats:
+        # --- NYOMTATÁS GOMB ---
+        components.html("""
+            <button onclick="window.parent.print()" style="
+                padding: 10px 24px; 
+                font-size: 16px; 
+                background-color: #000000; 
+                color: white; 
+                border: none; 
+                border-radius: 8px; 
+                cursor: pointer;
+                font-weight: bold;
+                box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
+            ">🖨️ Nyomtatás A4-es papírra</button>
+        """, height=60)
+        
+        fig = go.Figure()
+        
+        # Egységes, jól megkülönböztethető színek palettája
+        color_palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+        
+        for idx, stat_name in enumerate(selected_multi_stats):
+            stat_data = db["stats"][stat_name]["data"]
+            s_unit = db["stats"][stat_name].get("unit", "")
+            if not stat_data: continue
+            
+            sorted_data = sorted(stat_data, key=lambda x: str(x[0]))
+            x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in sorted_data]
+            y_vals = [item[1] for item in sorted_data]
+            formatted_texts = [f"{int(y):,} {s_unit}".replace(",", " ") if float(y).is_integer() else f"{y} {s_unit}" for y in y_vals]
+            
+            trace_color = color_palette[idx % len(color_palette)]
+            
+            # Minden statisztika egyedi színnel, NINCS piros-zöld fel/le színkódolás
+            fig.add_trace(go.Scatter(
+                x=x_dates,
+                y=y_vals,
+                mode='lines+markers',
+                name=stat_name,
+                line=dict(color=trace_color, width=5),
+                marker=dict(size=12, color=trace_color)
+            ))
+            
+            # Értékek feliratozása
+            for x_val, y_val, txt in zip(x_dates, y_vals, formatted_texts):
+                fig.add_annotation(
+                    x=x_val,
+                    y=y_val,
+                    text=txt,
+                    showarrow=False,
+                    yshift=15,
+                    textangle=-90,
+                    font=dict(size=13, color=trace_color, family="Arial Black"),
+                    xanchor="center",
+                    yanchor="bottom"
+                )
+                
+        fig.update_layout(
+            title=dict(text="<b>Összesített Statisztikák</b>", x=0.5, font=dict(size=36, color="#000000")),
+            plot_bgcolor="white", paper_bgcolor="white",
+            margin=dict(t=120, b=120, l=60, r=40),
+            xaxis=dict(
+                tickformat="%Y. %m. %d.",
+                tickangle=-90,
+                showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
+                showline=True, linecolor="#000000", linewidth=3,
+                tickfont=dict(color="#000000", size=15, family="Arial Black")
+            ),
+            yaxis=dict(
+                rangemode="tozero",
+                showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
+                showline=True, linecolor="#000000", linewidth=3,
+                tickfont=dict(color="#000000", size=18, family="Arial Black")
+            ),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                font=dict(size=16)
+            )
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+    st.stop()
+
+
+# ================= 3. EGYEDI STATISZTIKA NÉZET =================
 current_unit = db["stats"][selected_stat].get("unit", "")
 stat_settings = db.get("settings", {}).get(selected_stat, {})
 is_inverted = db["stats"][selected_stat].get("inverted", False)
@@ -381,7 +487,7 @@ if enable_date_filter:
         start_date_filter = st.sidebar.date_input("Kezdő dátum", value=min_d, min_value=min_d, max_value=max_d)
         end_date_filter = st.sidebar.date_input("Záró dátum", value=max_d, min_value=min_d, max_value=max_d)
 
-# --- ÉRTÉK TENGELY & GRAFIKON SZÉLESSÉG (BEÍRÓS MEZŐVEL) ---
+# --- ÉRTÉK TENGELY & GRAFIKON SZÉLESSÉG ---
 st.sidebar.subheader("📐 Érték Tengely & Vonalak")
 col_min, col_max, col_step = st.sidebar.columns(3)
 
@@ -396,9 +502,8 @@ chart_width_val = st.sidebar.number_input(
     step=100
 )
 
-# Egyedi kulccsal ellátott fordított statisztika jelölőnégyzet a beállításoknál
 is_stat_inverted_check = st.sidebar.checkbox(
-    "Fordított statisztika (a csökkenés a jó / zöld)", 
+    "Fordított statisztika (a 0 felül van és lefelé nő)", 
     value=is_inverted, 
     key="settings_stat_inverted_checkbox"
 )
@@ -429,7 +534,7 @@ if st.sidebar.button("💾 Beállítások Mentése"):
 
 col_left, col_right = st.columns([1, 2.5])
 
-# BAL OLDAL: Adatbevitel és Táblázat (Legfrissebb felül)
+# BAL OLDAL: Adatbevitel és Táblázat
 with col_left:
     st.subheader(f"➕ Új adat hozzáadása ({selected_stat})")
     with st.form("add_data_form", clear_on_submit=True):
@@ -472,7 +577,6 @@ with col_left:
 
 # JOBB OLDAL: Interaktív Grafikon
 with col_right:
-    # --- NYOMTATÁS GOMB ---
     components.html("""
         <button onclick="window.parent.print()" style="
             padding: 10px 24px; 
@@ -482,7 +586,6 @@ with col_right:
             border: none; 
             border-radius: 8px; 
             cursor: pointer;
-            font-family: 'Trebuchet MS', sans-serif;
             font-weight: bold;
             box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
         ">🖨️ Nyomtatás A4-es papírra</button>
@@ -510,11 +613,11 @@ with col_right:
             x_numeric = list(range(len(raw_items)))
             y_vals = [item[1] for item in raw_items]
 
-            # Vonalak színezése (fordított statisztika figyelembevételével)
             for i in range(len(raw_items) - 1):
                 x1, y1 = x_numeric[i], y_vals[i]
                 x2, y2 = x_numeric[i+1], y_vals[i+1]
                 
+                # Fordított logika: ha inverted, a csökkenés a jó (zöld)
                 if is_stat_inverted_check:
                     color = "#00C853" if y2 <= y1 else "#FF1744"
                 else:
@@ -540,7 +643,7 @@ with col_right:
                     line_width=6,
                     annotation_text=formatted_ref_text,
                     annotation_position="bottom right",
-                    annotation_font=dict(size=21, color="#FF1744", family="Trebuchet MS")
+                    annotation_font=dict(size=21, color="#FF1744", family="Arial Black")
                 )
 
             formatted_texts = []
@@ -557,11 +660,9 @@ with col_right:
                 
                 formatted_texts.append(base_text)
 
-            # Dátumok formátuma (évszám alul, lentről felfelé olvasva)
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
             x_formatted = [f"{d.year}. {d.month:02d}. {d.day:02d}." for d in x_dates]
 
-            # Adatpontok markerei
             fig.add_trace(go.Scatter(
                 x=x_numeric,
                 y=y_vals,
@@ -570,7 +671,6 @@ with col_right:
                 showlegend=False
             ))
 
-            # Értékek feliratozása lentről felfelé (-90 fok)
             for x_val, y_val, txt in zip(x_numeric, y_vals, formatted_texts):
                 fig.add_annotation(
                     x=x_val,
@@ -579,18 +679,18 @@ with col_right:
                     showarrow=False,
                     yshift=15,
                     textangle=-90,
-                    font=dict(size=15, color="#000000", family="Trebuchet MS"),
+                    font=dict(size=15, color="#000000", family="Arial Black"),
                     xanchor="center",
                     yanchor="bottom"
                 )
 
-            # --- NÉV ÉS POSZT FELIRAT A GRAFIKON BAL FELSŐ SARKÁBAN (ELŐTAGOK NÉLKÜL) ---
+            # --- NÉV ÉS POSZT FELIRAT MEGNÖVELT BETŰMÉRETTEL ---
             if person_name or person_post:
                 header_lines = []
                 if person_name:
-                    header_lines.append(f"<b>{person_name}</b>")
+                    header_lines.append(f"<span style='font-size: 32px;'><b>{person_name}</b></span>")
                 if person_post:
-                    header_lines.append(f"{person_post}")
+                    header_lines.append(f"<span style='font-size: 24px; color: #334155;'>{person_post}</span>")
                 
                 fig.add_annotation(
                     xref="paper", yref="paper",
@@ -599,49 +699,54 @@ with col_right:
                     showarrow=False,
                     align="left",
                     xanchor="left", yanchor="top",
-                    font=dict(size=18, color="#000000", family="Trebuchet MS")
+                    font=dict(family="Arial Black")
                 )
 
+            # A Y tengely beállítása: ha fordított, akkor autorange='reversed' (0 felül), ha nem, tozero (0 alul).
+            yaxis_dict = dict(
+                title=dict(text="", font=dict(color="#000000", size=1)), 
+                showgrid=True,
+                gridcolor="#F1F5F9",
+                gridwidth=2.5,
+                tickfont=dict(color="#000000", size=18, family="Arial Black"),
+                showline=True,
+                linecolor="#000000",
+                linewidth=3
+            )
+            if is_stat_inverted_check:
+                yaxis_dict["autorange"] = "reversed"
+            else:
+                yaxis_dict["rangemode"] = "tozero"
+
             layout_args = dict(
-                font=dict(family="Trebuchet MS"),
                 title=dict(
                     text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
                     x=0.5,
                     xref="paper",
                     xanchor='center',
                     yanchor='top',
-                    font=dict(size=42, color="#000000", family="Trebuchet MS")
+                    font=dict(size=42, color="#000000")
                 ),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
-                width=chart_width_val, # Beállított szélesség érvényesítése
+                width=chart_width_val,
                 margin=dict(t=150, b=150, l=60, r=60),
                 xaxis=dict(
                     title=dict(text="", font=dict(color="#000000", size=1)), 
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
-                    tickangle=-90,  # -90 fok: lentről felfelé olvasás, az évszám alul a tengelynél!
+                    tickangle=-90,
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=15, family="Trebuchet MS"),
+                    tickfont=dict(color="#000000", size=15, family="Arial Black"),
                     showline=True,
                     linecolor="#000000",
                     linewidth=3,
                     range=[0, len(x_numeric) - 1] if len(x_numeric) > 1 else [-0.5, 0.5]
                 ),
-                yaxis=dict(
-                    title=dict(text="", font=dict(color="#000000", size=1)), 
-                    rangemode="tozero",
-                    showgrid=True,
-                    gridcolor="#F1F5F9",
-                    gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=18, family="Trebuchet MS"),
-                    showline=True,
-                    linecolor="#000000",
-                    linewidth=3
-                )
+                yaxis=yaxis_dict
             )
 
             try:
@@ -663,5 +768,4 @@ with col_right:
                 'displayModeBar': True
             }
 
-            # use_container_width=False biztosítja, hogy a chart_width_val pixelérték pontosan érvényesüljön
             st.plotly_chart(fig, use_container_width=False, config=config)
