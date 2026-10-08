@@ -538,24 +538,26 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
-                    # --- FEJLÉC (NÉV ÉS POSZT) HELYES TÉRKÖZZEL ÉS SORKÖZZEL ---
-                    if person_name or person_post:
-                        header_lines = []
-                        if person_name: 
-                            header_lines.append(f"<span style='font-size: 30px; line-height: 1.2; display: inline-block;'><b>{person_name}</b></span>")
-                        if person_post: 
-                            header_lines.append(f"<span style='font-size: 22px; color: #000000; line-height: 1.6; display: inline-block;'>{person_post}</span>")
-                        
+                    # --- KÜLÖNLLÁVÓ ANNOTÁCIÓK A NÉVHEZ ÉS POSZTHOZ (ÖSSZECSÚSZÁS ELLEN) ---
+                    if person_name:
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.16,
-                            text="<br>".join(header_lines), showarrow=False,
-                            align="left", xanchor="left", yanchor="bottom", font=dict(family="Arial Black", color="#000000")
+                            xref="paper", yref="paper", x=0.0, y=1.24,
+                            text=f"<b>{person_name}</b>", showarrow=False,
+                            align="left", xanchor="left", yanchor="bottom",
+                            font=dict(size=30, family="Arial Black", color="#000000")
+                        )
+                    if person_post:
+                        fig.add_annotation(
+                            xref="paper", yref="paper", x=0.0, y=1.13,
+                            text=person_post, showarrow=False,
+                            align="left", xanchor="left", yanchor="bottom",
+                            font=dict(size=22, family="Arial Black", color="#000000")
                         )
 
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=1.0, y=1.16,
+                            xref="paper", yref="paper", x=1.0, y=1.18,
                             text=f"🎯 Cél: {goal_fmt}",
                             showarrow=False,
                             align="right", xanchor="right", yanchor="bottom",
@@ -581,8 +583,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
                         autosize=True,
-                        height=680,
-                        margin=dict(t=180, b=160, l=80, r=80),
+                        height=720,
+                        margin=dict(t=210, b=160, l=80, r=80),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
                             tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
