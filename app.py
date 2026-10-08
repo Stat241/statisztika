@@ -187,7 +187,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
-        # Időszakos összesítés nézet választás
         st.sidebar.markdown("---")
         st.sidebar.subheader("📅 Időszakos összesítés")
         indiv_agg = st.sidebar.selectbox("Grafikon nézet:", ["Napi adatok", "Heti (Csütörtöki zárás 14:00)", "Havi összesítés"], key="indiv_agg_view")
@@ -271,12 +270,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             st.markdown("---")
             st.subheader("📋 Adat-táblázat (Dupla kattintással közvetlenül szerkeszthető)")
-            st.caption("💡 Megjegyzés: Dupla kattintással átírhatsz bármilyen értéket vagy dátumot, és a táblázat alján lévő gombokkal törölhetsz is sort.")
+            st.caption("💡 Megjegyzés: Dupla kattintással átírhatsz bármilyen értéket vagy dátumot.")
             
             stat_data_raw = db["stats"][selected_stat]["data"]
             
             if stat_data_raw:
-                # Interaktív, szerkeszthető táblázat előkészítése
                 df_raw = pd.DataFrame(stat_data_raw, columns=["Dátum / Időpont", f"Érték ({current_unit})", "Megjegyzés"])
                 
                 edited_df = st.data_editor(
@@ -286,7 +284,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     key=f"editor_{selected_stat}"
                 )
                 
-                # Mentjük a táblázatban történt módosításokat
                 updated_list = []
                 for _, row in edited_df.iterrows():
                     d_val = str(row["Dátum / Időpont"]).strip() if pd.notnull(row["Dátum / Időpont"]) else ""
@@ -344,7 +341,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     }).reset_index()
                     raw_items = [[row["Period_Month"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
                 else:
-                    # NAPI ADATOK ÖSSZEVONÁSA (Azonos napi bejegyzések összeadása, csütörtök 14:00 felezéssel)
                     df_temp["Daily_Bucket"] = df_temp["Dátum"].apply(get_daily_bucket_label)
                     res_df = df_temp.groupby("Daily_Bucket", sort=False).agg({
                         "Érték": "sum",
@@ -790,6 +786,18 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                 save_data(db)
                 st.success(f"'{group_to_delete}' részleg törölve!")
                 st.rerun()
+
+    st.markdown("---")
+    st.subheader("🗑️ Statisztika kategória végleges törlése")
+    stat_to_delete_cat = st.selectbox("Törlendő statisztika kategória:", options=all_stat_names if all_stat_names else [""])
+    if st.button("🗑️ Statisztika Törlése") and stat_to_delete_cat:
+        if stat_to_delete_cat in db["stats"]:
+            del db["stats"][stat_to_delete_cat]
+            if "settings" in db and stat_to_delete_cat in db["settings"]:
+                del db["settings"][stat_to_delete_cat]
+            save_data(db)
+            st.success(f"'{stat_to_delete_cat}' statisztika sikeresen törölve!")
+            st.rerun()
 
     st.markdown("---")
     st.subheader("📂 Archívum kezelése")
