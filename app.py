@@ -60,7 +60,6 @@ def load_users():
         except Exception:
             pass
     
-    # Biztosítjuk, hogy az admin mindig létezzen és a helyes jelszóval működjön!
     if "admin" not in users:
         users["admin"] = {
             "password": "titkosjelszo2026",
@@ -298,7 +297,7 @@ with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
     else:
         st.info("Még nincsenek elérhető archivált elemek.")
 
-# --- ÚJ STATISZTIKA LÉTREHOZÁSA (FORDÍTOTT OPCIÓVAL) ---
+# --- ÚJ STATISZTIKA LÉTREHOZÁSA ---
 with st.sidebar.expander("➕ Új statisztika létrehozása"):
     new_stat_name = st.text_input("Statisztika neve:", placeholder="pl. Ügyfelek száma")
     new_stat_unit = st.text_input("Mértékegység / Kategória:", placeholder="pl. fő, db, Ft")
@@ -364,11 +363,12 @@ if selected_stat == "📋 ÖSSZESÍTŐ NÉZET":
         
     st.stop()
 
-# ================= 2. TÖBB STATISZTIKA ÖSSZEVETÉSE =================
+# ================= 2. TÖBB STATISZTIKA ÖSSZEVETÉSE (DÁTUMFÜGGETLEN & IDŐSZAK ALAPÚ) =================
 if selected_stat == "📈 TÖBB STATISZTIKA ÖSSZEVETÉSE":
     st.title("📈 Statisztikák Összevetése")
-    st.write("Válaszd ki azokat a statisztikákat, amelyeket egyetlen közös ábrán szeretnél látni. Ebben a nézetben minden statisztika saját színt kap.")
+    st.write("Válaszd ki az időszak típusát és a statisztikákat. A rendszer dátumfüggetlenül, egymással párhuzamosan (sorszám szerint) jeleníti meg az azonos típusú adataikat.")
     
+    comp_period_type = st.radio("Összehasonlítás alapja (időszak típus):", ["Napi", "Heti (Cs)", "Havi"], horizontal=True)
     selected_multi_stats = st.multiselect("Válassz statisztikákat az összevetéshez:", stat_names, default=stat_names[:2] if len(stat_names)>=2 else stat_names)
     
     if selected_multi_stats:
@@ -389,64 +389,97 @@ if selected_stat == "📈 TÖBB STATISZTIKA ÖSSZEVETÉSE":
         fig = go.Figure()
         color_palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
         
-        for idx, stat_name in enumerate(selected_multi_stats):
+        max_len = 0
+        processed_series = []
+        
+        for stat_name in selected_multi_stats:
             stat_data = db["stats"][stat_name]["data"]
             s_unit = db["stats"][stat_name].get("unit", "")
-            if not stat_data: continue
+            if not stat_data:
+                continue
             
-            sorted_data = sorted(stat_data, key=lambda x: str(x[0]))
-            x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in sorted_data]
-            y_vals = [item[1] for item in sorted_data]
-            formatted_texts = [f"{int(y):,} {s_unit}".replace(",", " ") if float(y).is_integer() else f"{y} {s_unit}" for y in y_vals]
+            df = pd.DataFrame(stat_data, columns=["Dátum", "Érték"])
+            df["Dátum"] = pd.to_datetime(df["Dátum"])
+            df = df.sort_values("Dátum")
+            df.set_index("Dátum", inplace=True)
             
-            trace_color = color_palette[idx % len(color_palette)]
+            try:
+                if comp_period_type == "Napi":
+                    res = df.resample("D").sum().reset_index()
+                elif comp_period_type == "Heti (Cs)":
+                    res = df.resample("W-THU").sum().reset_index()
+                else:
+                    res = df.resample("ME").sum().reset_index()
+            except Exception:
+                if comp_period_type == "Havi":
+                    res = df.resample("M").sum().reset_index()
+                else:
+                    res = df.reset_index()
             
-            fig.add_trace(go.Scatter(
-                x=x_dates,
-                y=y_vals,
-                mode='lines+markers',
-                name=stat_name,
-                line=dict(color=trace_color, width=5),
-                marker=dict(size=12, color=trace_color)
-            ))
+            res["Érték"] = res["Érték"].fillna(0)
+            items = res.values.tolist()
+            if len(items) > max_len:
+                max_len = len(items)
+            processed_series.append((stat_name, s_unit, items))
             
-            for x_val, y_val, txt in zip(x_dates, y_vals, formatted_texts):
-                fig.add_annotation(
-                    x=x_val,
-                    y=y_val,
-                    text=txt,
-                    showarrow=False,
-                    yshift=15,
-                    textangle=-90,
-                    font=dict(size=13, color=trace_color, family="Arial Black"),
-                    xanchor="center",
-                    yanchor="bottom"
-                )
+        if max_len > 0:
+            for idx, (stat_name, s_unit, items) in enumerate(processed_series):
+                y_vals = [item[1] for item in items]
+                x_idx_current = list(range(1, len(y_vals) + 1))
                 
-        fig.update_layout(
-            title=dict(text="<b>Összesített Statisztikák</b>", x=0.5, font=dict(size=36, color="#000000")),
-            plot_bgcolor="white", paper_bgcolor="white",
-            margin=dict(t=120, b=120, l=60, r=40),
-            xaxis=dict(
-                tickformat="%Y. %m. %d.",
-                tickangle=-90,
-                showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
-                showline=True, linecolor="#000000", linewidth=3,
-                tickfont=dict(color="#000000", size=15, family="Arial Black")
-            ),
-            yaxis=dict(
-                rangemode="tozero",
-                showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
-                showline=True, linecolor="#000000", linewidth=3,
-                tickfont=dict(color="#000000", size=18, family="Arial Black")
-            ),
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-                font=dict(size=16)
+                formatted_texts = [f"{int(y):,} {s_unit}".replace(",", " ") if float(y).is_integer() else f"{y} {s_unit}" for y in y_vals]
+                trace_color = color_palette[idx % len(color_palette)]
+                
+                fig.add_trace(go.Scatter(
+                    x=x_idx_current,
+                    y=y_vals,
+                    mode='lines+markers',
+                    name=stat_name,
+                    line=dict(color=trace_color, width=5),
+                    marker=dict(size=12, color=trace_color)
+                ))
+                
+                for x_val, y_val, txt in zip(x_idx_current, y_vals, formatted_texts):
+                    fig.add_annotation(
+                        x=x_val,
+                        y=y_val,
+                        text=txt,
+                        showarrow=False,
+                        yshift=15,
+                        textangle=-90,
+                        font=dict(size=13, color=trace_color, family="Arial Black"),
+                        xanchor="center",
+                        yanchor="bottom"
+                    )
+            
+            fig.update_layout(
+                title=dict(text=f"<b>Statisztikák Összevetése ({comp_period_type})</b>", x=0.5, font=dict(size=36, color="#000000")),
+                plot_bgcolor="white", paper_bgcolor="white",
+                margin=dict(t=120, b=120, l=60, r=40),
+                xaxis=dict(
+                    tickmode="array",
+                    tickvals=list(range(1, max_len + 1)),
+                    ticktext=[f"{i}." for i in range(1, max_len + 1)],
+                    title=dict(text="Időszak sorszáma", font=dict(size=16, color="#000000")),
+                    showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
+                    showline=True, linecolor="#000000", linewidth=3,
+                    tickfont=dict(color="#000000", size=15, family="Arial Black")
+                ),
+                yaxis=dict(
+                    rangemode="tozero",
+                    showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
+                    showline=True, linecolor="#000000", linewidth=3,
+                    tickfont=dict(color="#000000", size=18, family="Arial Black")
+                ),
+                legend=dict(
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    font=dict(size=16)
+                )
             )
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Nincs elegendő adat a kiválasztott statisztikákban.")
+            
     st.stop()
 
 
@@ -678,7 +711,7 @@ with col_right:
                     yanchor="bottom"
                 )
 
-            # --- MEGNÖVELT NÉV ÉS POSZT A BAL FELSŐ SARokban (ELŐTAGOK NÉLKÜL) ---
+            # --- NÉV ÉS POSZT A BAL FELSŐ SARKBAN (MEGNÖVELT BETŰMÉRETTEL) ---
             if person_name or person_post:
                 header_lines = []
                 if person_name:
