@@ -170,7 +170,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     else:
         selected_stat = st.sidebar.selectbox("Választott statisztika:", stat_names)
         
-        st.sidebar.subheader("⚙️ Grafikon & Határok Beállítása")
         current_unit = db["stats"][selected_stat].get("unit", "")
         stat_group = db["stats"][selected_stat].get("group", "Egyéb")
         stat_settings = db.get("settings", {}).get(selected_stat, {})
@@ -179,19 +178,20 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         person_name = st.sidebar.text_input("Név (Fejlécbe):", value=stat_settings.get("person_name", ""))
         person_post = st.sidebar.text_input("Poszt (Fejlécbe):", value=stat_settings.get("person_post", ""))
         
-        col_min, col_max, col_step = st.sidebar.columns(3)
-        with col_min: ymin = st.text_input("Min", value=stat_settings.get("ymin", ""))
-        with col_max: ymax = st.text_input("Max", value=stat_settings.get("ymax", ""))
-        with col_step: ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
-
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
-        # Időszakos összesítés (Napi / Heti Csütörtök 14:00 / Havi)
+        # Időszakos összesítés nézet választás
         st.sidebar.markdown("---")
         st.sidebar.subheader("📅 Időszakos összesítés")
         indiv_agg = st.sidebar.selectbox("Grafikon nézet:", ["Napi adatok", "Heti (Csütörtöki zárás 14:00)", "Havi összesítés"], key="indiv_agg_view")
 
+        # Aktuális nézethez tartozó külön beállítások (Méretezés, Életvonal, Cél)
         mode_settings = stat_settings.get(indiv_agg, {})
+        
+        default_ymin = mode_settings.get("ymin", "")
+        default_ymax = mode_settings.get("ymax", "")
+        default_ystep = mode_settings.get("ystep", "")
+
         default_surv_type = mode_settings.get("survival_type", "Nincs")
         default_surv_val = mode_settings.get("survival_value", 0.0)
         default_show_surv = mode_settings.get("show_survival", True)
@@ -199,17 +199,28 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         default_goal_type = mode_settings.get("goal_type", "Nincs")
         default_goal_val = mode_settings.get("goal_val_target", 0.0)
 
+        # Skálázás/Méretezés beállítása az AKTUÁLIS nézethez
+        st.sidebar.markdown("---")
+        st.sidebar.subheader(f"📐 Méretezés & Skála ({indiv_agg})")
+        col_min, col_max, col_step = st.sidebar.columns(3)
+        with col_min: ymin = st.text_input("Min", value=default_ymin, key=f"ymin_{indiv_agg}")
+        with col_max: ymax = st.text_input("Max", value=default_ymax, key=f"ymax_{indiv_agg}")
+        with col_step: ystep = st.text_input("Lépés", value=default_ystep, key=f"ystep_{indiv_agg}")
+
+        # Akkumulált összeg megjelenítése zárójelben beállítások
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
         show_acc_in_brackets = st.sidebar.checkbox("Akkumulált összeg megjelenítése a pontok alatt", value=stat_settings.get("show_acc_in_brackets", False))
         initial_accumulated_val = st.sidebar.number_input("Kezdő alap:", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
         
+        # Életvonal az AKTUÁLIS nézethez
         st.sidebar.markdown("---")
         st.sidebar.subheader(f"🛡️ Életvonal ({indiv_agg})")
         survival_type = st.sidebar.selectbox("Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)"], index=0 if default_surv_type == "Nincs" else 1, key=f"surv_type_{indiv_agg}")
         survival_value = st.sidebar.number_input("Életvonal értéke:", value=float(default_surv_val), step=1.0, key=f"surv_val_{indiv_agg}")
         show_survival_line = st.sidebar.checkbox("Életvonal rajzolása a grafikonra", value=default_show_surv, key=f"show_surv_{indiv_agg}")
 
+        # Célkitűzés az AKTUÁLIS nézethez
         st.sidebar.markdown("---")
         st.sidebar.subheader(f"🎯 Célkitűzés ({indiv_agg})")
         goal_type = st.sidebar.selectbox("Cél típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0 if default_goal_type=="Nincs" else (1 if default_goal_type=="Fix érték (db/Ft)" else 2), key=f"goal_type_{indiv_agg}")
@@ -221,13 +232,14 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             
             db["settings"][selected_stat]["person_name"] = person_name
             db["settings"][selected_stat]["person_post"] = person_post
-            db["settings"][selected_stat]["ymin"] = ymin
-            db["settings"][selected_stat]["ymax"] = ymax
-            db["settings"][selected_stat]["ystep"] = ystep
             db["settings"][selected_stat]["show_acc_in_brackets"] = show_acc_in_brackets
             db["settings"][selected_stat]["initial_accumulated_val"] = initial_accumulated_val
             
+            # Nézetenként elmentjük a saját méretezést, életvonalat és célt
             db["settings"][selected_stat][indiv_agg] = {
+                "ymin": ymin,
+                "ymax": ymax,
+                "ystep": ystep,
                 "survival_type": survival_type,
                 "survival_value": survival_value,
                 "show_survival": show_survival_line,
@@ -259,7 +271,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             st.subheader("📋 Adat-táblázat (Törlés kukás gombbal)")
             stat_data_raw = db["stats"][selected_stat]["data"]
             if stat_data_raw:
-                # Fejléc sor
                 h_cols = st.columns([2, 2, 3, 1])
                 h_cols[0].markdown("**Dátum / Időpont**")
                 h_cols[1].markdown(f"**Érték ({current_unit})**")
@@ -267,7 +278,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 h_cols[3].markdown("**Törlés**")
                 st.markdown("---")
 
-                # Adatsorok megjelenítése soronkénti kukás gombbal a végén
                 for idx, item in enumerate(stat_data_raw):
                     dt_val = item[0]
                     v_val = item[1]
@@ -317,12 +327,12 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     }).reset_index()
                     raw_items = [[row["Period_End"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
                 elif indiv_agg == "Havi összesítés":
-                    df_temp = df_temp.set_index("Dátum")
-                    res_df = df_temp.resample("ME").agg({
+                    df_temp["Period_Month"] = df_temp["Dátum"].dt.to_period("M").dt.to_timestamp(how="end").dt.floor("D")
+                    res_df = df_temp.groupby("Period_Month").agg({
                         "Érték": "sum",
                         "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
                     }).reset_index()
-                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
+                    raw_items = [[row["Period_Month"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
                 else:
                     raw_items = [[row["Dátum"].strftime("%Y-%m-%d %H:%M"), float(row["Érték"]), row["Megjegyzés"]] for _, row in df_temp.iterrows()]
             else:
@@ -512,7 +522,8 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
                     df["Period_End"] = df["Dátum"].apply(get_thursday_period_end)
                     res = df.groupby("Period_End").agg({"Érték": "sum"}).reset_index().rename(columns={"Period_End": "Dátum"})
                 else:
-                    res = df.set_index("Dátum").resample("ME").sum().reset_index()
+                    df["Period_Month"] = df["Dátum"].dt.to_period("M").dt.to_timestamp(how="end").dt.floor("D")
+                    res = df.groupby("Period_Month").agg({"Érték": "sum"}).reset_index().rename(columns={"Period_Month": "Dátum"})
             except Exception:
                 res = df
             
