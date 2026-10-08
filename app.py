@@ -218,9 +218,10 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             save_data(db)
             st.sidebar.success("Beállítások elmentve!")
 
-        col_left, col_right = st.columns([1, 2.5])
+        # Fülek használata, hogy a grafikon teljes szélességben érvényesülhessen
+        tab_chart, tab_table = st.tabs(["📊 Grafikon Nézet", "📋 Adatkezelés & Táblázat"])
 
-        with col_left:
+        with tab_table:
             st.subheader(f"➕ Új adat ({selected_stat})")
             with st.form("add_data_form", clear_on_submit=True):
                 input_date = st.date_input("Dátum")
@@ -250,7 +251,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             save_data(db)
                             st.rerun()
 
-        with col_right:
+        with tab_chart:
             components.html("""
                 <button onclick="window.parent.print()" style="
                     padding: 10px 20px; 
@@ -265,6 +266,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 ">🖨️ Nyomtatás A4-re</button>
             """, height=50)
 
+            stat_data_raw = db["stats"][selected_stat]["data"]
             raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
             
             # Akkumulált értékek kiszámítása háttérben, ha be van kapcsolva
@@ -403,7 +405,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
 
-                    # A grafikon szélessége dinamikusan igazodik a felhasználói beállításhoz, biztosítva a pontok közötti távolságot
+                    # A megadott szélesség érvényesítése (minimum a beállított érték, vagy pontonkénti 140px)
                     effective_width = max(chart_width_val, len(raw_items) * 140)
 
                     layout_args = dict(
@@ -433,7 +435,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         pass
 
                     fig.update_layout(**layout_args)
-                    st.plotly_chart(fig, use_container_width=False)
+                    st.plotly_chart(fig, use_container_width=False, scrolling=True)
 
 # 2. TÖBB STATISZTIKA ÖSSZEVETÉSE
 elif selected_menu == "📈 Több Statisztika Összevetése":
