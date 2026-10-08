@@ -183,41 +183,57 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         st.sidebar.subheader("📅 Időszakos összesítés")
         indiv_agg = st.sidebar.selectbox("Grafikon nézet / Aggregáció:", ["Napi adatok", "Heti (Csütörtöki zárás)", "Havi összesítés"], key="indiv_agg_view")
 
+        # Aktuális nézethez tartozó beállítások lekérése (visszafelé kompatibilis fallbackkel)
+        mode_settings = stat_settings.get(indiv_agg, {})
+        default_surv_type = mode_settings.get("survival_type", stat_settings.get("survival_type", "Nincs"))
+        default_surv_val = mode_settings.get("survival_value", stat_settings.get("survival_value", stat_settings.get("goal_value", 0.0)))
+        default_show_surv = mode_settings.get("show_survival", stat_settings.get("show_survival", True))
+
+        default_goal_type = mode_settings.get("goal_type", stat_settings.get("goal_type", "Nincs"))
+        default_goal_val = mode_settings.get("goal_val_target", stat_settings.get("goal_val_target", 0.0))
+
         # Akkumulált / Halmozott összeg megjelenítése zárójelben beállítások
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
         show_acc_in_brackets = st.sidebar.checkbox("Akkumulált összeg megjelenítése a pontok alatt", value=stat_settings.get("show_acc_in_brackets", False))
         initial_accumulated_val = st.sidebar.number_input("Kezdő alap:", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
         
-        # Életvonal és Célkitűzés beállítások biztonságos fallbackkel
-        old_goal_val = stat_settings.get("goal_value", 0.0)
-        default_surv_val = stat_settings.get("survival_value", old_goal_val)
-        default_surv_type = stat_settings.get("survival_type", "Fix érték (db/Ft)" if default_surv_val > 0 else "Nincs")
-        
+        # Életvonal és Célkitűzés beállítások az adott nézethez
         st.sidebar.markdown("---")
-        st.sidebar.subheader("🛡️ Életvonal (Túlélési határ)")
-        survival_type = st.sidebar.selectbox("Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)"], index=0 if default_surv_type == "Nincs" else 1, key="surv_type")
-        survival_value = st.sidebar.number_input("Életvonal értéke:", value=float(default_surv_val), step=1.0)
-        show_survival_line = st.sidebar.checkbox("Életvonal rajzolása a grafikonra", value=stat_settings.get("show_survival", True))
+        st.sidebar.subheader(f"🛡️ Életvonal ({indiv_agg})")
+        survival_type = st.sidebar.selectbox("Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)"], index=0 if default_surv_type == "Nincs" else 1, key=f"surv_type_{indiv_agg}")
+        survival_value = st.sidebar.number_input("Életvonal értéke:", value=float(default_surv_val), step=1.0, key=f"surv_val_{indiv_agg}")
+        show_survival_line = st.sidebar.checkbox("Életvonal rajzolása a grafikonra", value=default_show_surv, key=f"show_surv_{indiv_agg}")
 
         st.sidebar.markdown("---")
-        st.sidebar.subheader("🎯 Célkitűzés")
-        goal_type = st.sidebar.selectbox("Cél típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0, key="goal_type")
-        goal_value = st.sidebar.number_input("Cél mértéke:", value=float(stat_settings.get("goal_val_target", 0.0)), step=1.0)
+        st.sidebar.subheader(f"🎯 Célkitűzés ({indiv_agg})")
+        goal_type = st.sidebar.selectbox("Cél típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0 if default_goal_type=="Nincs" else (1 if default_goal_type=="Fix érték (db/Ft)" else 2), key=f"goal_type_{indiv_agg}")
+        goal_value = st.sidebar.number_input("Cél mértéke:", value=float(default_goal_val), step=1.0, key=f"goal_val_{indiv_agg}")
 
         if st.sidebar.button("💾 Beállítások Mentése"):
             if "settings" not in db: db["settings"] = {}
-            db["settings"][selected_stat] = {
-                "person_name": person_name, "person_post": person_post,
-                "ymin": ymin, "ymax": ymax, "ystep": ystep, 
-                "survival_type": survival_type, "survival_value": survival_value, "show_survival": show_survival_line,
-                "goal_type": goal_type, "goal_val_target": goal_value,
-                "show_acc_in_brackets": show_acc_in_brackets,
-                "initial_accumulated_val": initial_accumulated_val
+            if selected_stat not in db["settings"]: db["settings"][selected_stat] = {}
+            
+            db["settings"][selected_stat]["person_name"] = person_name
+            db["settings"][selected_stat]["person_post"] = person_post
+            db["settings"][selected_stat]["ymin"] = ymin
+            db["settings"][selected_stat]["ymax"] = ymax
+            db["settings"][selected_stat]["ystep"] = ystep
+            db["settings"][selected_stat]["show_acc_in_brackets"] = show_acc_in_brackets
+            db["settings"][selected_stat]["initial_accumulated_val"] = initial_accumulated_val
+            
+            # Nézetenkénti mentés
+            db["settings"][selected_stat][indiv_agg] = {
+                "survival_type": survival_type,
+                "survival_value": survival_value,
+                "show_survival": show_survival_line,
+                "goal_type": goal_type,
+                "goal_val_target": goal_value
             }
+
             db["stats"][selected_stat]["inverted"] = is_stat_inverted_check
             save_data(db)
-            st.sidebar.success("Beállítások elmentve!")
+            st.sidebar.success(f"Beállítások elmentve ({indiv_agg})!")
 
         # Fülek használata
         tab_chart, tab_table = st.tabs(["📊 Grafikon Nézet", "📋 Adatkezelés & Táblázat"])
@@ -297,10 +313,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             y_vals_temp = [item[1] for item in raw_items] if raw_items else []
             
-            # Életvonal érték
+            # Életvonal és cél értékek az aktuális nézetből
             calc_survival_val = survival_value if survival_type == "Fix érték (db/Ft)" else 0.0
 
-            # Cél érték
             calc_goal_val = 0.0
             if goal_type == "Fix érték (db/Ft)":
                 calc_goal_val = goal_value
