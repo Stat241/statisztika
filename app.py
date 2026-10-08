@@ -134,6 +134,12 @@ def get_thursday_period_end(dt):
         thu_14 += pd.Timedelta(days=7)
     return thu_14
 
+# Napi csoportosítási kulcs (Csütörtök 14:00 felezéssel)
+def get_daily_bucket_label(dt):
+    if dt.weekday() == 3 and (dt.hour > 14 or (dt.hour == 14 and dt.minute > 0)):
+        return dt.strftime("%Y-%m-%d") + " (14:00 után)"
+    return dt.strftime("%Y-%m-%d")
+
 # ================= SESSION STATE =================
 if "db" not in st.session_state: st.session_state.db = load_data()
 db = st.session_state.db
@@ -249,7 +255,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         tab_chart, tab_table = st.tabs(["📊 Grafikon Nézet", "📋 Adatkezelés & Táblázat"])
 
         with tab_table:
-            st.subheader(f"➕ Új adat ({selected_stat})")
+            st.subheader(f"➕ Új adat hozzáadása ({selected_stat})")
             with st.form("add_data_form", clear_on_submit=True):
                 col_d, col_t = st.columns(2)
                 with col_d: input_date = st.date_input("Dátum")
@@ -263,30 +269,39 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     save_data(db)
                     st.rerun()
 
-            st.subheader("📋 Adat-táblázat (Törlés kukás gombbal)")
+            st.markdown("---")
+            st.subheader("📋 Adat-táblázat (Dupla kattintással közvetlenül szerkeszthető)")
+            st.caption("💡 Megjegyzés: Dupla kattintással átírhatsz bármilyen értéket vagy dátumot, és a táblázat alján lévő gombokkal törölhetsz is sort.")
+            
             stat_data_raw = db["stats"][selected_stat]["data"]
+            
             if stat_data_raw:
-                h_cols = st.columns([2, 2, 3, 1])
-                h_cols[0].markdown("**Dátum / Időpont**")
-                h_cols[1].markdown(f"**Érték ({current_unit})**")
-                h_cols[2].markdown("**Megjegyzés**")
-                h_cols[3].markdown("**Törlés**")
-                st.markdown("---")
-
-                for idx, item in enumerate(stat_data_raw):
-                    dt_val = item[0]
-                    v_val = item[1]
-                    n_val = item[2] if len(item) > 2 else ""
-
-                    r_cols = st.columns([2, 2, 3, 1])
-                    r_cols[0].write(dt_val)
-                    r_cols[1].write(fmt_num(v_val, current_unit))
-                    r_cols[2].write(n_val if n_val else "-")
-                    
-                    if r_cols[3].button("🗑️", key=f"del_row_{selected_stat}_{idx}"):
-                        db["stats"][selected_stat]["data"].pop(idx)
-                        save_data(db)
-                        st.rerun()
+                # Interaktív, szerkeszthető táblázat előkészítése
+                df_raw = pd.DataFrame(stat_data_raw, columns=["Dátum / Időpont", f"Érték ({current_unit})", "Megjegyzés"])
+                
+                edited_df = st.data_editor(
+                    df_raw,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    key=f"editor_{selected_stat}"
+                )
+                
+                # Mentjük a táblázatban történt módosításokat
+                updated_list = []
+                for _, row in edited_df.iterrows():
+                    d_val = str(row["Dátum / Időpont"]).strip() if pd.notnull(row["Dátum / Időpont"]) else ""
+                    if d_val:
+                        try:
+                            v_val = float(row[f"Érték ({current_unit})"]) if pd.notnull(row[f"Érték ({current_unit})"]) else 0.0
+                        except ValueError:
+                            v_val = 0.0
+                        n_val = str(row["Megjegyzés"]).strip() if pd.notnull(row["Megjegyzés"]) else ""
+                        updated_list.append([d_val, v_val, n_val])
+                
+                if updated_list != stat_data_raw:
+                    db["stats"][selected_stat]["data"] = updated_list
+                    save_data(db)
+                    st.rerun()
             else:
                 st.info("Még nincsenek rögzített adatok ebben a statisztikában.")
 
@@ -329,7 +344,13 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     }).reset_index()
                     raw_items = [[row["Period_Month"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
                 else:
-                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d %H:%M"), float(row["Érték"]), row["Megjegyzés"]] for _, row in df_temp.iterrows()]
+                    # NAPI ADATOK ÖSSZEVONÁSA (Azonos napi bejegyzések összeadása, csütörtök 14:00 felezéssel)
+                    df_temp["Daily_Bucket"] = df_temp["Dátum"].apply(get_daily_bucket_label)
+                    res_df = df_temp.groupby("Daily_Bucket", sort=False).agg({
+                        "Érték": "sum",
+                        "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
+                    }).reset_index()
+                    raw_items = [[row["Daily_Bucket"], float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
             else:
                 raw_items = []
             
@@ -399,8 +420,17 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         else:
                             formatted_texts.append(v_str)
 
-                    x_dates = [datetime.strptime(str(item[0]).split()[0], "%Y-%m-%d") for item in raw_items]
-                    x_formatted = [f"{d.year}. {d.month:02d}. {d.day:02d}." for d in x_dates]
+                    x_formatted = []
+                    for item in raw_items:
+                        lbl = str(item[0])
+                        if "(14:00 után)" in lbl:
+                            base_part = lbl.replace(" (14:00 után)", "").split()[0]
+                            d = datetime.strptime(base_part, "%Y-%m-%d")
+                            x_formatted.append(f"{d.year}. {d.month:02d}. {d.day:02d}. (14:00+)")
+                        else:
+                            base_part = lbl.split()[0]
+                            d = datetime.strptime(base_part, "%Y-%m-%d")
+                            x_formatted.append(f"{d.year}. {d.month:02d}. {d.day:02d}.")
 
                     hover_texts = []
                     for dt, val, acc, n in zip(x_formatted, y_vals, accumulated_vals, notes):
@@ -512,7 +542,8 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
             
             try:
                 if comp_period_type == "Napi":
-                    res = df.set_index("Dátum").resample("D").sum().reset_index()
+                    df["Daily_Bucket"] = df["Dátum"].apply(get_daily_bucket_label)
+                    res = df.groupby("Daily_Bucket", sort=False).agg({"Érték": "sum"}).reset_index().rename(columns={"Daily_Bucket": "Dátum"})
                 elif comp_period_type == "Heti (Cs 14:00)":
                     df["Period_End"] = df["Dátum"].apply(get_thursday_period_end)
                     res = df.groupby("Period_End").agg({"Érték": "sum"}).reset_index().rename(columns={"Period_End": "Dátum"})
