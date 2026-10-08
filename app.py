@@ -287,7 +287,7 @@ with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
 with st.sidebar.expander("➕ Új statisztika létrehozása"):
     new_stat_name = st.text_input("Statisztika neve:", placeholder="pl. Ügyfelek száma")
     new_stat_unit = st.text_input("Mértékegység / Kategória:", placeholder="pl. fő, db, Ft")
-    is_new_inverted = st.checkbox("Fordított statisztika (a csökkenés a jó / zöld)")
+    is_new_inverted = st.checkbox("Fordított statisztika (a csökkenés a jó / zöld)", key="new_stat_inverted_checkbox")
     if st.button("Létrehozás"):
         if new_stat_name:
             if new_stat_name not in db["stats"]:
@@ -396,7 +396,12 @@ chart_width_val = st.sidebar.number_input(
     step=100
 )
 
-is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (a csökkenés a jó / zöld)", value=is_inverted)
+# Egyedi kulccsal ellátott fordított statisztika jelölőnégyzet a beállításoknál
+is_stat_inverted_check = st.sidebar.checkbox(
+    "Fordított statisztika (a csökkenés a jó / zöld)", 
+    value=is_inverted, 
+    key="settings_stat_inverted_checkbox"
+)
 
 show_ref_line = st.sidebar.checkbox("Referencia vonal megjelenítése", value=stat_settings.get("show_ref", True))
 ref_line_val = st.sidebar.text_input(
@@ -616,7 +621,7 @@ with col_right:
                     tickmode="array",
                     tickvals=x_numeric,
                     ticktext=x_formatted,
-                    tickangle=-90,
+                    tickangle=-90,  # -90 fok: lentről felfelé olvasás, az évszám alul a tengelynél!
                     showgrid=True,
                     gridcolor="#F1F5F9",
                     gridwidth=2.5,
