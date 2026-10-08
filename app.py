@@ -38,13 +38,13 @@ st.markdown("""
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
-            overflow: hidden !important;
+            overflow: visible !important;
         }
         
         /* Grafikon teljes kitöltése A4-en levágás nélkül */
         .stPlotlyChart, .js-plotly-plot, .plot-container {
             width: 100% !important;
-            height: 92vh !important;
+            height: 100% !important;
             page-break-inside: avoid !important;
         }
     }
@@ -563,29 +563,29 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
-                    # --- BALRA TOLT FEJLÉC ANNOTÁCIÓK (A KERET TELJES BAL SZÉLÉRE IGAZÍTVA) ---
+                    # --- BALRA TOLT FEJLÉC ANNOTÁCIÓK (A Y TENGELYEN KÍVÜLRE, TELJESEN BALRA TOLVA) ---
                     if person_name:
                         fig.add_annotation(
-                            xref="container", yref="container", x=0.01, y=0.97,
+                            xref="paper", yref="paper", x=-0.05, y=1.20,
                             text=f"<b>{person_name}</b>", showarrow=False,
-                            align="left", xanchor="left", yanchor="top",
+                            align="left", xanchor="left", yanchor="bottom",
                             font=dict(size=28, family="Arial Black", color="#000000")
                         )
                     if person_post:
                         fig.add_annotation(
-                            xref="container", yref="container", x=0.01, y=0.91,
+                            xref="paper", yref="paper", x=-0.05, y=1.10,
                             text=person_post, showarrow=False,
-                            align="left", xanchor="left", yanchor="top",
+                            align="left", xanchor="left", yanchor="bottom",
                             font=dict(size=20, family="Arial Black", color="#000000")
                         )
 
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
-                            xref="container", yref="container", x=0.99, y=0.97,
+                            xref="paper", yref="paper", x=1.05, y=1.15,
                             text=f"🎯 Cél: {goal_fmt}",
                             showarrow=False,
-                            align="right", xanchor="right", yanchor="top",
+                            align="right", xanchor="right", yanchor="bottom",
                             font=dict(size=20, color="#C5A059", family="Arial Black")
                         )
 
@@ -603,13 +603,13 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     layout_args = dict(
                         title=dict(
                             text=f"<b>{selected_stat}</b><br><span style='font-size: 22px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
-                            x=0.5, xref="container", y=0.97, xanchor='center', yanchor='top',
+                            x=0.5, xref="paper", y=1.0, xanchor='center', yanchor='bottom',
                             font=dict(size=32, color="#000000")
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
                         autosize=True,
-                        height=620,
-                        margin=dict(t=110, b=120, l=70, r=50),
+                        height=680,
+                        margin=dict(t=160, b=120, l=90, r=60),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
                             tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
@@ -845,7 +845,7 @@ elif selected_menu == "📖 Eseménynapló":
         df_events.columns = ["Dátum", "Statisztika neve", "Érték", "Esemény / Megjegyzés"]
         st.dataframe(df_events, use_container_width=True, hide_index=True)
     else:
-        st.info("Még nincsenek rögzített események vagy megjegyzések a statisztikákhoz.")
+        st.info("Még nincsenek rögzített események vagy megjegyzések a statisztikához.")
 
 # 5. ÚJ STATISZTIKA LÉTREHOZÁSA
 elif selected_menu == "➕ Új Statisztika Létrehozása":
