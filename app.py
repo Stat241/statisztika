@@ -13,7 +13,15 @@ st.set_page_config(page_title="Statisztika Kezelő Rendszer", layout="wide", pag
 st.markdown("""
     <style>
     @media print {
-        @page { size: A4 landscape; margin: 5mm; }
+        @page { 
+            size: A4 landscape; 
+            margin: 10mm; 
+        }
+        body {
+            background-color: #ffffff !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -26,7 +34,7 @@ st.markdown("""
         body * {
             visibility: hidden !important;
         }
-        .js-plotly-plot, .js-plotly-plot * {
+        .js-plotly-plot, .js-plotly-plot *, .js-plotly-plot svg, .js-plotly-plot .main-svg {
             visibility: visible !important;
         }
         .js-plotly-plot {
@@ -34,6 +42,12 @@ st.markdown("""
             left: 0 !important;
             top: 0 !important;
             width: 100% !important;
+            height: 100% !important;
+            max-height: 190mm !important;
+        }
+        .js-plotly-plot .svg-container {
+            width: 100% !important;
+            height: 100% !important;
         }
     }
     </style>
