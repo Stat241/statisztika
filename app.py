@@ -127,7 +127,6 @@ def calculate_stat_condition(data, survival_line=0):
 
 # Csütörtöki 14:00-ás zárás szerinti heti periodizáció
 def get_thursday_period_end(dt):
-    # Hány nap van hátra a hét csütörtökéig (Hétfő=0, Csütörtök=3)
     days_to_thu = 3 - dt.weekday()
     thu_14 = dt.normalize() + pd.Timedelta(days=days_to_thu, hours=14)
     if dt > thu_14:
@@ -192,7 +191,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         st.sidebar.subheader("📅 Időszakos összesítés")
         indiv_agg = st.sidebar.selectbox("Grafikon nézet:", ["Napi adatok", "Heti (Csütörtöki zárás 14:00)", "Havi összesítés"], key="indiv_agg_view")
 
-        # Aktuális nézethez tartozó beállítások lekérése
         mode_settings = stat_settings.get(indiv_agg, {})
         default_surv_type = mode_settings.get("survival_type", "Nincs")
         default_surv_val = mode_settings.get("survival_value", 0.0)
@@ -201,13 +199,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         default_goal_type = mode_settings.get("goal_type", "Nincs")
         default_goal_val = mode_settings.get("goal_val_target", 0.0)
 
-        # Akkumulált összeg megjelenítése zárójelben beállítások
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
         show_acc_in_brackets = st.sidebar.checkbox("Akkumulált összeg megjelenítése a pontok alatt", value=stat_settings.get("show_acc_in_brackets", False))
         initial_accumulated_val = st.sidebar.number_input("Kezdő alap:", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
         
-        # Életvonal és Célkitűzés az adott nézethez
         st.sidebar.markdown("---")
         st.sidebar.subheader(f"🛡️ Életvonal ({indiv_agg})")
         survival_type = st.sidebar.selectbox("Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)"], index=0 if default_surv_type == "Nincs" else 1, key=f"surv_type_{indiv_agg}")
@@ -243,7 +239,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             save_data(db)
             st.sidebar.success(f"Beállítások elmentve ({indiv_agg})!")
 
-        # Fülek használata
         tab_chart, tab_table = st.tabs(["📊 Grafikon Nézet", "📋 Adatkezelés & Táblázat"])
 
         with tab_table:
@@ -297,10 +292,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             stat_data_raw = db["stats"][selected_stat]["data"]
             
-            # Időszakos összesítés / átalakítás a választott nézet alapján
             if stat_data_raw:
                 df_temp = pd.DataFrame([[item[0], item[1], item[2] if len(item)>2 else ""] for item in stat_data_raw], columns=["Dátum", "Érték", "Megjegyzés"])
-                df_temp["Dátum"] = pd.to_datetime(df_temp["Dátum"])
+                # Kevert dátumformátumok biztonságos kezelése (format="mixed")
+                df_temp["Dátum"] = pd.to_datetime(df_temp["Dátum"], format="mixed", errors="coerce")
+                df_temp = df_temp.dropna(subset=["Dátum"])
                 df_temp["Érték"] = pd.to_numeric(df_temp["Érték"])
                 df_temp = df_temp.sort_values("Dátum")
                 
@@ -319,11 +315,10 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     }).reset_index()
                     raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
                 else:
-                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in df_temp.iterrows()]
+                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d %H:%M"), float(row["Érték"]), row["Megjegyzés"]] for _, row in df_temp.iterrows()]
             else:
                 raw_items = []
             
-            # Akkumulált értékek pontos kiszámítása futó összegként
             accumulated_vals = []
             if raw_items:
                 running_tot = float(initial_accumulated_val)
@@ -333,7 +328,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             y_vals_temp = [item[1] for item in raw_items] if raw_items else []
             
-            # Életvonal és cél értékek az aktuális nézetből
             calc_survival_val = survival_value if survival_type == "Fix érték (db/Ft)" else 0.0
 
             calc_goal_val = 0.0
@@ -346,11 +340,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 date_range_str = ""
                 if len(raw_items) > 0:
                     try:
-                        start_d = datetime.strptime(raw_items[0][0], "%Y-%m-%d").strftime("%Y. %m. %d.")
-                        end_d = datetime.strptime(raw_items[-1][0], "%Y-%m-%d").strftime("%Y. %m. %d.")
+                        start_d = datetime.strptime(raw_items[0][0].split()[0], "%Y-%m-%d").strftime("%Y. %m. %d.")
+                        end_d = datetime.strptime(raw_items[-1][0].split()[0], "%Y-%m-%d").strftime("%Y. %m. %d.")
                         date_range_str = f"({start_d} - {end_d})"
                     except Exception:
-                        date_range_str = f"({raw_items[0][0]} - {raw_items[-1][0]})"
+                        date_range_str = ""
 
                 fig = go.Figure()
 
@@ -373,7 +367,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line=dict(color=color, width=6), showlegend=False, hoverinfo='skip'
                         ))
 
-                    # Életvonal rajzolása sötét szürke színnel (#4B5563)
                     if show_survival_line and calc_survival_val > 0:
                         fig.add_hline(
                             y=calc_survival_val,
@@ -382,7 +375,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line_width=4
                         )
 
-                    # Címkék előkészítése az új pontozott formátummal
                     formatted_texts = []
                     for idx, val in enumerate(y_vals):
                         v_str = fmt_num(val, current_unit)
@@ -393,7 +385,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         else:
                             formatted_texts.append(v_str)
 
-                    x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
+                    x_dates = [datetime.strptime(str(item[0]).split()[0], "%Y-%m-%d") for item in raw_items]
                     x_formatted = [f"{d.year}. {d.month:02d}. {d.day:02d}." for d in x_dates]
 
                     hover_texts = []
@@ -410,7 +402,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
-                    # Értékek feliratozása (-75 fokos szögben, xshift=18)
                     for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
                         fig.add_annotation(
                             x=x_val, y=y_val, text=txt, showarrow=False, yshift=12, xshift=18, textangle=-75,
@@ -418,7 +409,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
-                    # Név és Poszt bal felül
                     if person_name or person_post:
                         header_lines = []
                         if person_name: header_lines.append(f"<span style='font-size: 30px;'><b>{person_name}</b></span>")
@@ -430,7 +420,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             align="left", xanchor="left", yanchor="bottom", font=dict(family="Arial Black", color="#000000")
                         )
 
-                    # Cél kiírása a jobb felső sarokba
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
@@ -503,7 +492,8 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
             
             clean_data = [[item[0], item[1]] for item in stat_data]
             df = pd.DataFrame(clean_data, columns=["Dátum", "Érték"])
-            df["Dátum"] = pd.to_datetime(df["Dátum"])
+            df["Dátum"] = pd.to_datetime(df["Dátum"], format="mixed", errors="coerce")
+            df = df.dropna(subset=["Dátum"])
             df = df.sort_values("Dátum")
             
             try:
@@ -618,7 +608,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                 color_map = {"green": "🟢", "blue": "🔵", "yellow": "🟡", "orange": "🟠", "red": "🔴", "gray": "⚪"}
                                 st.markdown(f"<div style='text-align: right; font-weight: bold; font-size: 14px;'>{color_map.get(condition_color, '⚪')} {condition_text}</div>", unsafe_allow_html=True)
                             
-                            dates_parsed = [datetime.strptime(item[0].split()[0], "%Y-%m-%d").date() for item in s_data_raw if len(item[0]) >= 10] if s_data_raw else []
+                            dates_parsed = [pd.to_datetime(item[0], format="mixed", errors="coerce").date() for item in s_data_raw if item[0] and pd.notnull(pd.to_datetime(item[0], format="mixed", errors="coerce"))] if s_data_raw else []
                             min_d = min(dates_parsed) if dates_parsed else None
                             max_d = max(dates_parsed) if dates_parsed else None
                             
@@ -637,7 +627,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                     fig_card.add_hline(y=card_surv_val, line_dash="dash", line_color="#4B5563", line_width=2)
 
                                 formatted_t = [fmt_num(y, s_unit) for y in card_y]
-                                x_fmt = [datetime.strptime(str(item[0]).split()[0], "%Y-%m-%d").strftime("%b %d") for item in card_items]
+                                x_fmt = [pd.to_datetime(str(item[0]), format="mixed", errors="coerce").strftime("%b %d") for item in card_items]
                                 hover_c = [f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}" if n else f"Dátum: {dt}<br>Érték: {txt}" for dt, txt, n in zip(x_fmt, formatted_t, c_notes)]
 
                                 fig_card.add_trace(go.Scatter(x=x_num, y=card_y, mode='markers', marker=dict(size=8, color="#1E293B"), hovertext=hover_c, hoverinfo='text', showlegend=False))
