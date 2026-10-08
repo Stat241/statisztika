@@ -8,18 +8,29 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
-# ================= NYOMTATÁSI CSS (A4 Fekvő formátumra igazítva) =================
+# ================= NYOMTATÁSI CSS (A4 Fekvő formátumra igazítva, csak a grafikonra) =================
 st.markdown("""
     <style>
     @media print {
-        @page { size: A4 landscape; margin: 5mm; }
+        @page { size: A4 landscape; margin: 8mm; }
         [data-testid="stSidebar"], 
+        [data-testid="stHeader"],
+        [data-testid="stToolbar"],
         .stForm, 
         button, 
         iframe,
-        [data-testid="stHeader"],
-        [data-testid="stToolbar"] {
+        .no-print {
             display: none !important;
+        }
+        /* Bal oldali adatbeviteli oszlop elrejtése nyomtatáskor */
+        div[data-testid="stHorizontalBlock"] > div:first-child {
+            display: none !important;
+        }
+        /* Jobb oldali grafikon oszlop teljes szélességűvé tétele nyomtatáskor */
+        div[data-testid="stHorizontalBlock"] > div:last-child {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            max-width: 100% !important;
         }
         .main .block-container {
             padding: 0 !important;
@@ -28,7 +39,6 @@ st.markdown("""
         }
         .js-plotly-plot, .plotly, .plot-container {
             width: 100% !important;
-            height: auto !important;
         }
         .js-plotly-plot .plotly .main-svg {
             shape-rendering: geometricPrecision !important;
@@ -348,6 +358,20 @@ if selected_stat == "📋 ÖSSZESÍTŐ NÉZET":
 current_unit = db["stats"][selected_stat].get("unit", "")
 stat_settings = db.get("settings", {}).get(selected_stat, {})
 
+# --- MEGSZEMÉLYESÍTÉS (BAL FELÜLRE) ---
+st.sidebar.subheader("👤 Fejléc adatai (Grafikonra)")
+person_name = st.sidebar.text_input("Név:", value=stat_settings.get("person_name", ""))
+person_post = st.sidebar.text_input("Poszt / Beosztás:", value=stat_settings.get("person_post", ""))
+
+# --- GRAFIKON MÉRETEZÉSE (ÉRTÉKEK TÁVOLSÁGA) ---
+st.sidebar.subheader("📏 Grafikon méretezése")
+chart_width_val = st.sidebar.slider(
+    "Értékek közötti távolság (Szélesség px):", 
+    min_value=800, max_value=3000, 
+    value=int(stat_settings.get("chart_width", 1400)), 
+    step=100
+)
+
 period = st.sidebar.radio("Időszak bontás:", ["Napi", "Heti (Cs)", "Havi"], index=1)
 
 # --- AKKUMULÁLT ÉRTÉK BEÁLLÍTÁSOK ---
@@ -387,8 +411,15 @@ ref_line_val = st.sidebar.text_input(
 if st.sidebar.button("💾 Beállítások Mentése"):
     if "settings" not in db: db["settings"] = {}
     db["settings"][selected_stat] = {
-        "period": period, "ymin": ymin, "ymax": ymax, "ystep": ystep,
-        "show_ref": show_ref_line, "ref_line": ref_line_val
+        "person_name": person_name,
+        "person_post": person_post,
+        "chart_width": chart_width_val,
+        "period": period, 
+        "ymin": ymin, 
+        "ymax": ymax, 
+        "ystep": ystep,
+        "show_ref": show_ref_line, 
+        "ref_line": ref_line_val
     }
     save_data(db)
     st.sidebar.success("Beállítások elmentve!")
@@ -438,7 +469,7 @@ with col_left:
 
 # JOBB OLDAL: Interaktív Grafikon
 with col_right:
-    # --- NYOMTATÁS GOMB (window.parent.print() hívással a teljes Streamlit lap nyomtatásához) ---
+    # --- NYOMTATÁS GOMB (window.parent.print() hívással a teljes A4 laphoz) ---
     components.html("""
         <button onclick="window.parent.print()" style="
             padding: 10px 24px; 
@@ -453,6 +484,15 @@ with col_right:
             box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
         ">🖨️ Nyomtatás A4-es papírra</button>
     """, height=60)
+
+    # --- BAL FELÜLSŐ FEJLÉC ADATOK (NÉV ÉS POSZT) ---
+    if person_name or person_post:
+        st.markdown(f"""
+            <div style="text-align: left; margin-bottom: 15px; font-family: Arial, sans-serif;">
+                {f'<div style="font-size: 22px; font-weight: bold; color: #000000;">Név: {person_name}</div>' if person_name else ''}
+                {f'<div style="font-size: 18px; font-weight: bold; color: #334155;">Poszt: {person_post}</div>' if person_post else ''}
+            </div>
+        """, unsafe_allow_html=True)
 
     if stat_data_list:
         raw_items = [item for item in stat_data_list]
@@ -510,7 +550,7 @@ with col_right:
             for val in y_vals:
                 v_str = f"{int(val):,}".replace(",", " ") if float(val).is_integer() else f"{val}"
                 
-                # AKKUMULÁLT ÉRTÉK AZ ÉRTÉK ALATT (új sorban <br>-rel)
+                # AKKUMULÁLT ÉRTÉK AZ ÉRTÉK ALATT / MELLETT (új sorban <br>-rel)
                 if enable_accumulated:
                     running_acc += val
                     acc_str = f"{int(running_acc):,}".replace(",", " ") if float(running_acc).is_integer() else f"{running_acc}"
@@ -558,6 +598,7 @@ with col_right:
                 ),
                 plot_bgcolor="white",
                 paper_bgcolor="white",
+                width=chart_width_val, # Testreszabható grafikon szélesség / értékek távolsága
                 margin=dict(t=150, b=150, l=60, r=60),
                 xaxis=dict(
                     title=dict(text="", font=dict(color="#000000", size=1)), 
