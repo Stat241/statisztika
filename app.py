@@ -52,9 +52,13 @@ def load_users():
                 users = json.load(f)
         except Exception:
             pass
-    if "admin" not in users:
-        users["admin"] = {"password": "titkosjelszo2026", "allowed_stats": ["*"]}
-        save_users(users)
+            
+    # Garantáljuk, hogy a 'teszt' felhasználó '123' jelszóval és teljes joggal mindig létezzen!
+    users["teszt"] = {
+        "password": "123",
+        "allowed_stats": ["*"]
+    }
+    save_users(users)
     return users
 
 def save_users(users_data):
@@ -125,7 +129,7 @@ if "db" not in st.session_state: st.session_state.db = load_data()
 if "authenticated" not in st.session_state: st.session_state.authenticated = False
 if "current_user" not in st.session_state: st.session_state.current_user = None
 
-USERS = st.session_state.users
+USERS = load_users()
 db = st.session_state.db
 
 # ================= BEJELENTKEZÉSI FELÜLET =================
