@@ -173,7 +173,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         person_name = st.sidebar.text_input("Név (Fejlécbe):", value=stat_settings.get("person_name", ""))
         person_post = st.sidebar.text_input("Poszt (Fejlécbe):", value=stat_settings.get("person_post", ""))
         
-        chart_width_val = st.sidebar.number_input("Grafikon szélessége (px):", min_value=600, max_value=4000, value=int(stat_settings.get("chart_width", 1400)), step=100)
+        chart_width_val = st.sidebar.number_input("Grafikon szélessége (px):", min_value=600, max_value=5000, value=int(stat_settings.get("chart_width", 1400)), step=100)
         
         col_min, col_max, col_step = st.sidebar.columns(3)
         with col_min: ymin = st.text_input("Min", value=stat_settings.get("ymin", ""))
@@ -403,6 +403,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
 
+                    # A grafikon szélessége dinamikusan igazodik a felhasználói beállításhoz, biztosítva a pontok közötti távolságot
+                    effective_width = max(chart_width_val, len(raw_items) * 140)
+
                     layout_args = dict(
                         title=dict(
                             text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
@@ -410,7 +413,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             font=dict(size=38, color="#000000")
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
-                        width=chart_width_val,
+                        width=effective_width,
                         margin=dict(t=150, b=150, l=60, r=60),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
