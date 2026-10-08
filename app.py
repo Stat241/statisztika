@@ -134,9 +134,9 @@ def get_thursday_period_end(dt):
         thu_14 += pd.Timedelta(days=7)
     return thu_14
 
-# Napi csoportosítási kulcs (Csütörtök 14:00 felezéssel)
+# Napi csoportosítási kulcs (Minden napra vonatkozó 14:00 előtti és utáni bontás)
 def get_daily_bucket_label(dt):
-    if dt.weekday() == 3 and (dt.hour > 14 or (dt.hour == 14 and dt.minute > 0)):
+    if dt.hour > 14 or (dt.hour == 14 and dt.minute > 0):
         return dt.strftime("%Y-%m-%d") + " (14:00 után)"
     return dt.strftime("%Y-%m-%d")
 
@@ -325,31 +325,33 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             
             if stat_data_raw:
                 df_temp = pd.DataFrame([[item[0], item[1], item[2] if len(item)>2 else ""] for item in stat_data_raw], columns=["Dátum", "Érték", "Megjegyzés"])
-                df_temp["Dátum"] = pd.to_datetime(df_temp["Dátum"], format="mixed", errors="coerce")
-                df_temp = df_temp.dropna(subset=["Dátum"])
+                df_temp["Sort_Key"] = pd.to_datetime(df_temp["Dátum"], format="mixed", errors="coerce")
+                df_temp = df_temp.dropna(subset=["Sort_Key"])
                 df_temp["Érték"] = pd.to_numeric(df_temp["Érték"])
-                df_temp = df_temp.sort_values("Dátum")
+                df_temp = df_temp.sort_values("Sort_Key")
                 
                 if indiv_agg == "Heti (Csütörtöki zárás 14:00)":
-                    df_temp["Period_End"] = df_temp["Dátum"].apply(get_thursday_period_end)
+                    df_temp["Period_End"] = df_temp["Sort_Key"].apply(get_thursday_period_end)
                     res_df = df_temp.groupby("Period_End").agg({
                         "Érték": "sum",
                         "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
                     }).reset_index()
                     raw_items = [[row["Period_End"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
                 elif indiv_agg == "Havi összesítés":
-                    df_temp["Period_Month"] = df_temp["Dátum"].dt.to_period("M").dt.to_timestamp(how="end").dt.floor("D")
+                    df_temp["Period_Month"] = df_temp["Sort_Key"].dt.to_period("M").dt.to_timestamp(how="end").dt.floor("D")
                     res_df = df_temp.groupby("Period_Month").agg({
                         "Érték": "sum",
                         "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
                     }).reset_index()
                     raw_items = [[row["Period_Month"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
                 else:
-                    df_temp["Daily_Bucket"] = df_temp["Dátum"].apply(get_daily_bucket_label)
-                    res_df = df_temp.groupby("Daily_Bucket", sort=False).agg({
+                    df_temp["Daily_Bucket"] = df_temp["Sort_Key"].apply(get_daily_bucket_label)
+                    # Hogy a napi sorrend (délelőtt -> délután) helyes maradjon csoportosításkor is:
+                    res_df = df_temp.groupby(["Daily_Bucket"], sort=False).agg({
+                        "Sort_Key": "min",
                         "Érték": "sum",
                         "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
-                    }).reset_index()
+                    }).reset_index().sort_values("Sort_Key")
                     raw_items = [[row["Daily_Bucket"], float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
             else:
                 raw_items = []
@@ -536,25 +538,25 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
             
             clean_data = [[item[0], item[1]] for item in stat_data]
             df = pd.DataFrame(clean_data, columns=["Dátum", "Érték"])
-            df["Dátum"] = pd.to_datetime(df["Dátum"], format="mixed", errors="coerce")
-            df = df.dropna(subset=["Dátum"])
-            df = df.sort_values("Dátum")
+            df["Sort_Key"] = pd.to_datetime(df["Dátum"], format="mixed", errors="coerce")
+            df = df.dropna(subset=["Sort_Key"])
+            df = df.sort_values("Sort_Key")
             
             try:
                 if comp_period_type == "Napi":
-                    df["Daily_Bucket"] = df["Dátum"].apply(get_daily_bucket_label)
-                    res = df.groupby("Daily_Bucket", sort=False).agg({"Érték": "sum"}).reset_index().rename(columns={"Daily_Bucket": "Dátum"})
+                    df["Daily_Bucket"] = df["Sort_Key"].apply(get_daily_bucket_label)
+                    res = df.groupby(["Daily_Bucket"], sort=False).agg({"Sort_Key": "min", "Érték": "sum"}).reset_index().sort_values("Sort_Key").rename(columns={"Daily_Bucket": "Dátum"})
                 elif comp_period_type == "Heti (Cs 14:00)":
-                    df["Period_End"] = df["Dátum"].apply(get_thursday_period_end)
+                    df["Period_End"] = df["Sort_Key"].apply(get_thursday_period_end)
                     res = df.groupby("Period_End").agg({"Érték": "sum"}).reset_index().rename(columns={"Period_End": "Dátum"})
                 else:
-                    df["Period_Month"] = df["Dátum"].dt.to_period("M").dt.to_timestamp(how="end").dt.floor("D")
+                    df["Period_Month"] = df["Sort_Key"].dt.to_period("M").dt.to_timestamp(how="end").dt.floor("D")
                     res = df.groupby("Period_Month").agg({"Érték": "sum"}).reset_index().rename(columns={"Period_Month": "Dátum"})
             except Exception:
                 res = df
             
             res["Érték"] = res["Érték"].fillna(0)
-            items = res.values.tolist()
+            items = res[["Dátum", "Érték"]].values.tolist()
             if len(items) > max_len: max_len = len(items)
             processed_series.append((stat_name, s_unit, items))
             
