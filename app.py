@@ -33,12 +33,17 @@ ARCHIVE_FILE = "archivum.json"
 def fmt_num(val, unit=""):
     if val is None:
         return ""
-    if float(val).is_integer():
-        s = f"{int(val):,}".replace(",", ".")
-    else:
-        s = f"{val}".replace(",", ".")
+    try:
+        f_val = float(val)
+        if f_val.is_integer():
+            s = f"{int(f_val):,}".replace(",", ".")
+        else:
+            s = f"{f_val}".replace(",", ".")
+    except (ValueError, TypeError):
+        s = str(val)
+        
     if unit:
-        clean_unit = unit.strip(".")
+        clean_unit = str(unit).strip(".")
         return f"{s}.{clean_unit}."
     return s
 
@@ -133,12 +138,6 @@ def get_thursday_period_end(dt):
     if dt > thu_14:
         thu_14 += pd.Timedelta(days=7)
     return thu_14
-
-# Napi csoportosítási kulcs (Minden napra vonatkozó 14:00 előtti és utáni bontás)
-def get_daily_bucket_label(dt):
-    if dt.hour > 14 or (dt.hour == 14 and dt.minute > 0):
-        return dt.strftime("%Y-%m-%d") + " (14:00 után)"
-    return dt.strftime("%Y-%m-%d")
 
 # ================= SESSION STATE =================
 if "db" not in st.session_state: st.session_state.db = load_data()
@@ -335,35 +334,95 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     res_df = df_temp.groupby("Period_End").agg({
                         "Érték": "sum",
                         "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
-                    }).reset_index()
-                    raw_items = [[row["Period_End"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
+                    }).reset_index().sort_values("Period_End")
+
+                    raw_items = []
+                    for idx, row in res_df.iterrows():
+                        d_str = row["Period_End"].strftime("%Y-%m-%d")
+                        raw_items.append({
+                            "x": len(raw_items),
+                            "date_str": d_str,
+                            "label": row["Period_End"].strftime("%Y. %m. %d."),
+                            "hover_label": row["Period_End"].strftime("%Y. %m. %d."),
+                            "val": float(row["Érték"]),
+                            "note": row["Megjegyzés"]
+                        })
+                    unique_x = list(range(len(raw_items)))
+                    unique_labels = [item["label"] for item in raw_items]
+
                 elif indiv_agg == "Havi összesítés":
                     df_temp["Period_Month"] = df_temp["Sort_Key"].dt.to_period("M").dt.to_timestamp(how="end").dt.floor("D")
                     res_df = df_temp.groupby("Period_Month").agg({
                         "Érték": "sum",
                         "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
-                    }).reset_index()
-                    raw_items = [[row["Period_Month"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
+                    }).reset_index().sort_values("Period_Month")
+
+                    raw_items = []
+                    for idx, row in res_df.iterrows():
+                        d_str = row["Period_Month"].strftime("%Y-%m-%d")
+                        raw_items.append({
+                            "x": len(raw_items),
+                            "date_str": d_str,
+                            "label": row["Period_Month"].strftime("%Y. %m. %d."),
+                            "hover_label": row["Period_Month"].strftime("%Y. %m. %d."),
+                            "val": float(row["Érték"]),
+                            "note": row["Megjegyzés"]
+                        })
+                    unique_x = list(range(len(raw_items)))
+                    unique_labels = [item["label"] for item in raw_items]
+
                 else:
-                    df_temp["Daily_Bucket"] = df_temp["Sort_Key"].apply(get_daily_bucket_label)
-                    # Hogy a napi sorrend (délelőtt -> délután) helyes maradjon csoportosításkor is:
-                    res_df = df_temp.groupby(["Daily_Bucket"], sort=False).agg({
+                    # NAPI ADATOK (Egy függőleges vonalon a 14:00 előtti és utáni adatok)
+                    df_temp["Date_Only"] = df_temp["Sort_Key"].dt.strftime("%Y-%m-%d")
+                    df_temp["Is_Post_14"] = (df_temp["Sort_Key"].dt.hour > 14) | ((df_temp["Sort_Key"].dt.hour == 14) & (df_temp["Sort_Key"].dt.minute > 0))
+
+                    res_df = df_temp.groupby(["Date_Only", "Is_Post_14"], sort=False).agg({
                         "Sort_Key": "min",
                         "Érték": "sum",
                         "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
                     }).reset_index().sort_values("Sort_Key")
-                    raw_items = [[row["Daily_Bucket"], float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
+
+                    unique_dates = []
+                    for _, row in res_df.iterrows():
+                        d = row["Date_Only"]
+                        if d not in unique_dates:
+                            unique_dates.append(d)
+
+                    date_to_x = {d: idx for idx, d in enumerate(unique_dates)}
+
+                    raw_items = []
+                    for _, row in res_df.iterrows():
+                        d_only = row["Date_Only"]
+                        is_p14 = row["Is_Post_14"]
+                        d_obj = datetime.strptime(d_only, "%Y-%m-%d")
+                        fmt_d = f"{d_obj.year}. {d_obj.month:02d}. {d_obj.day:02d}."
+                        hover_lbl = fmt_d + (" (14:00 után)" if is_p14 else " (14:00 előtt)")
+
+                        raw_items.append({
+                            "x": date_to_x[d_only],
+                            "date_str": d_only,
+                            "label": fmt_d,
+                            "hover_label": hover_lbl,
+                            "val": float(row["Érték"]),
+                            "note": row["Megjegyzés"]
+                        })
+
+                    unique_x = list(range(len(unique_dates)))
+                    unique_labels = [datetime.strptime(d, "%Y-%m-%d").strftime("%Y. %m. %d.") for d in unique_dates]
+
             else:
                 raw_items = []
+                unique_x = []
+                unique_labels = []
             
             accumulated_vals = []
             if raw_items:
                 running_tot = float(initial_accumulated_val)
                 for item in raw_items:
-                    running_tot += float(item[1])
+                    running_tot += item["val"]
                     accumulated_vals.append(running_tot)
 
-            y_vals_temp = [item[1] for item in raw_items] if raw_items else []
+            y_vals_temp = [item["val"] for item in raw_items] if raw_items else []
             
             calc_survival_val = survival_value if survival_type == "Fix érték (db/Ft)" else 0.0
 
@@ -377,8 +436,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 date_range_str = ""
                 if len(raw_items) > 0:
                     try:
-                        start_d = datetime.strptime(raw_items[0][0].split()[0], "%Y-%m-%d").strftime("%Y. %m. %d.")
-                        end_d = datetime.strptime(raw_items[-1][0].split()[0], "%Y-%m-%d").strftime("%Y. %m. %d.")
+                        start_d = datetime.strptime(raw_items[0]["date_str"], "%Y-%m-%d").strftime("%Y. %m. %d.")
+                        end_d = datetime.strptime(raw_items[-1]["date_str"], "%Y-%m-%d").strftime("%Y. %m. %d.")
                         date_range_str = f"({start_d} - {end_d})"
                     except Exception:
                         date_range_str = ""
@@ -386,9 +445,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 fig = go.Figure()
 
                 if len(raw_items) > 0:
-                    x_numeric = list(range(len(raw_items)))
-                    y_vals = [item[1] for item in raw_items]
-                    notes = [item[2] if len(item) > 2 else "" for item in raw_items]
+                    x_numeric = [item["x"] for item in raw_items]
+                    y_vals = [item["val"] for item in raw_items]
+                    notes = [item["note"] for item in raw_items]
 
                     for i in range(len(raw_items) - 1):
                         x1, y1 = x_numeric[i], y_vals[i]
@@ -422,24 +481,12 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         else:
                             formatted_texts.append(v_str)
 
-                    x_formatted = []
-                    for item in raw_items:
-                        lbl = str(item[0])
-                        if "(14:00 után)" in lbl:
-                            base_part = lbl.replace(" (14:00 után)", "").split()[0]
-                            d = datetime.strptime(base_part, "%Y-%m-%d")
-                            x_formatted.append(f"{d.year}. {d.month:02d}. {d.day:02d}. (14:00+)")
-                        else:
-                            base_part = lbl.split()[0]
-                            d = datetime.strptime(base_part, "%Y-%m-%d")
-                            x_formatted.append(f"{d.year}. {d.month:02d}. {d.day:02d}.")
-
                     hover_texts = []
-                    for dt, val, acc, n in zip(x_formatted, y_vals, accumulated_vals, notes):
+                    for item, val, acc in zip(raw_items, y_vals, accumulated_vals):
                         v_str = fmt_num(val, current_unit)
                         acc_str = fmt_num(acc, current_unit)
-                        h_txt = f"Dátum: {dt}<br>Érték: {v_str}<br>Akkumulált: {acc_str}"
-                        if n: h_txt += f"<br>Megjegyzés: {n}"
+                        h_txt = f"Dátum: {item['hover_label']}<br>Érték: {v_str}<br>Akkumulált: {acc_str}"
+                        if item['note']: h_txt += f"<br>Megjegyzés: {item['note']}"
                         hover_texts.append(h_txt)
 
                     fig.add_trace(go.Scatter(
@@ -485,6 +532,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
 
+                    xaxis_range = [-0.3, max(unique_x) + 0.3] if len(unique_x) > 1 else [-0.5, 0.5]
+
                     layout_args = dict(
                         title=dict(
                             text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
@@ -497,11 +546,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         margin=dict(t=180, b=160, l=80, r=80),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
-                            tickmode="array", tickvals=x_numeric, ticktext=x_formatted, tickangle=-30,
+                            tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
                             showgrid=True, gridcolor="#F1F5F9", gridwidth=3,
                             tickfont=dict(color="#000000", size=15, family="Arial Black"),
                             showline=True, linecolor="#000000", linewidth=3.5,
-                            range=[0, len(x_numeric) - 1] if len(x_numeric) > 1 else [-0.5, 0.5]
+                            range=xaxis_range
                         ),
                         yaxis=yaxis_dict
                     )
@@ -544,7 +593,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
             
             try:
                 if comp_period_type == "Napi":
-                    df["Daily_Bucket"] = df["Sort_Key"].apply(get_daily_bucket_label)
+                    df["Daily_Bucket"] = df["Sort_Key"].apply(lambda dt: dt.strftime("%Y-%m-%d"))
                     res = df.groupby(["Daily_Bucket"], sort=False).agg({"Sort_Key": "min", "Érték": "sum"}).reset_index().sort_values("Sort_Key").rename(columns={"Daily_Bucket": "Dátum"})
                 elif comp_period_type == "Heti (Cs 14:00)":
                     df["Period_End"] = df["Sort_Key"].apply(get_thursday_period_end)
