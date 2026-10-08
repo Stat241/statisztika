@@ -15,7 +15,7 @@ st.markdown("""
     @media print {
         @page { 
             size: A4 landscape; 
-            margin: 10mm; 
+            margin: 0; 
         }
         body, html {
             background-color: #ffffff !important;
@@ -25,6 +25,7 @@ st.markdown("""
             padding: 0 !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
+            overflow: hidden !important;
         }
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
@@ -42,18 +43,20 @@ st.markdown("""
             visibility: visible !important;
         }
         .js-plotly-plot {
-            position: absolute !important;
+            position: fixed !important;
             left: 10mm !important;
             top: 10mm !important;
             width: 277mm !important;
             height: 190mm !important;
             max-width: 277mm !important;
             max-height: 190mm !important;
-            border: 3px solid #000000 !important;
+            border: 4px solid #000000 !important;
             box-sizing: border-box !important;
             padding: 5mm !important;
             background: #ffffff !important;
             margin: 0 !important;
+            page-break-inside: avoid !important;
+            page-break-after: avoid !important;
         }
         .js-plotly-plot .svg-container {
             width: 100% !important;
