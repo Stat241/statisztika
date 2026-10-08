@@ -181,7 +181,12 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         with col_step: ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
-        is_accumulated = st.sidebar.checkbox("🔄 Akkumulált értékek (halmozott összeg)", value=stat_settings.get("is_accumulated", False))
+        
+        # Akkumulált értékek beállításai
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🔄 Akkumulált / Halmozott Nézet")
+        is_accumulated = st.sidebar.checkbox("Akkumulált értékek (halmozott összeg)", value=stat_settings.get("is_accumulated", False))
+        initial_accumulated_val = st.sidebar.number_input("Kezdő érték (opcionális, ha nincs, az első adattól számolja):", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
         
         # Életvonal és Célkitűzés beállítások biztonságos fallbackkel
         old_goal_val = stat_settings.get("goal_value", 0.0)
@@ -206,7 +211,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 "ymin": ymin, "ymax": ymax, "ystep": ystep, 
                 "survival_type": survival_type, "survival_value": survival_value, "show_survival": show_survival_line,
                 "goal_type": goal_type, "goal_val_target": goal_value,
-                "is_accumulated": is_accumulated
+                "is_accumulated": is_accumulated,
+                "initial_accumulated_val": initial_accumulated_val
             }
             db["stats"][selected_stat]["inverted"] = is_stat_inverted_check
             save_data(db)
@@ -261,9 +267,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
             
-            # Akkumulálás alkalmazása, ha be van kapcsolva
+            # Akkumulált értékek kalkulációja kezdőértékkel vagy az első elemtől
             if is_accumulated and raw_items:
-                running_total = 0.0
+                running_total = float(initial_accumulated_val)
                 accumulated_items = []
                 for item in raw_items:
                     running_total += float(item[1])
@@ -314,17 +320,13 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line=dict(color=color, width=6), showlegend=False, hoverinfo='skip'
                         ))
 
-                    # Életvonal rajzolása a grafikonra (piros vonal)
+                    # Életvonal rajzolása felirat nélkül (csak a vonal)
                     if show_survival_line and calc_survival_val > 0:
-                        surv_str = f"{int(calc_survival_val):,}".replace(",", " ") if float(calc_survival_val).is_integer() else f"{calc_survival_val}"
                         fig.add_hline(
                             y=calc_survival_val,
                             line_dash="solid",
                             line_color="#EF4444",
-                            line_width=4,
-                            annotation_text=f" Életvonal: {surv_str} {current_unit}",
-                            annotation_position="bottom right",
-                            annotation_font=dict(size=18, color="#EF4444", family="Arial Black")
+                            line_width=4
                         )
 
                     formatted_texts = [f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}" for val in y_vals]
@@ -515,7 +517,8 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
                     
                     if s_settings.get("is_accumulated", False) and card_items:
-                        running_tot = 0.0
+                        init_acc = float(s_settings.get("initial_accumulated_val", 0.0))
+                        running_tot = init_acc
                         acc_card_items = []
                         for item in card_items:
                             running_tot += float(item[1])
