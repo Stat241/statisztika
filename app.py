@@ -14,8 +14,8 @@ st.markdown("""
     <style>
     @media print {
         @page { 
-            size: auto; 
-            margin: 5mm; 
+            size: A4 landscape; 
+            margin: 0mm; 
         }
         body, html {
             background-color: #ffffff !important;
@@ -44,15 +44,17 @@ st.markdown("""
         }
         .js-plotly-plot {
             position: fixed !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
+            left: 8mm !important;
+            top: 8mm !important;
+            width: calc(100vw - 16mm) !important;
+            height: calc(100vh - 16mm) !important;
             max-width: none !important;
             max-height: none !important;
+            border: 4px solid #000000 !important;
+            box-sizing: border-box !important;
+            padding: 10mm !important;
             background: #ffffff !important;
             margin: 0 !important;
-            padding: 0 !important;
             page-break-inside: avoid !important;
             page-break-after: avoid !important;
         }
@@ -422,7 +424,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             font=dict(size=18, color="#2563EB", family="Arial Black")
                         )
 
-                    # Grafikon saját kerete: mirror=True beállítással a tengelyek körbe zárják a plot területet
                     yaxis_dict = dict(
                         title=dict(text="", font=dict(color="#000000", size=1)), 
                         showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
