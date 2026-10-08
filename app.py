@@ -178,6 +178,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
+        # Időszakos összesítés (Napi / Heti Csütörtök / Havi)
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("📅 Időszakos összesítés")
+        indiv_agg = st.sidebar.selectbox("Grafikon nézet / Aggregáció:", ["Napi adatok", "Heti (Csütörtöki zárás)", "Havi összesítés"], key="indiv_agg_view")
+
         # Akkumulált / Halmozott összeg megjelenítése zárójelben beállítások
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
@@ -263,7 +268,24 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             """, height=50)
 
             stat_data_raw = db["stats"][selected_stat]["data"]
-            raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
+            
+            # Aggregáció alkalmazása a választott nézet alapján
+            if stat_data_raw:
+                df_temp = pd.DataFrame([[item[0], item[1], item[2] if len(item)>2 else ""] for item in stat_data_raw], columns=["Dátum", "Érték", "Megjegyzés"])
+                df_temp["Dátum"] = pd.to_datetime(df_temp["Dátum"])
+                df_temp["Érték"] = pd.to_numeric(df_temp["Érték"])
+                df_temp = df_temp.sort_values("Dátum").set_index("Dátum")
+                
+                if indiv_agg == "Heti (Csütörtöki zárás)":
+                    res_df = df_temp.resample("W-THU").agg({"Érték": "sum"}).reset_index()
+                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), ""] for _, row in res_df.iterrows()]
+                elif indiv_agg == "Havi összesítés":
+                    res_df = df_temp.resample("ME").agg({"Érték": "sum"}).reset_index()
+                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), ""] for _, row in res_df.iterrows()]
+                else:
+                    raw_items = sorted(stat_data_raw, key=lambda x: str(x[0]))
+            else:
+                raw_items = []
             
             # Akkumulált értékek pontos kiszámítása futó összegként
             accumulated_vals = []
@@ -395,7 +417,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     layout_args = dict(
                         title=dict(
-                            text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
+                            text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
                             x=0.5, xref="paper", xanchor='center', yanchor='top',
                             font=dict(size=38, color="#000000")
                         ),
