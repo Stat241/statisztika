@@ -182,11 +182,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
-        # Akkumulált értékek beállításai
+        # Kezdő érték / Alap hozzáadása beállítások
         st.sidebar.markdown("---")
-        st.sidebar.subheader("🔄 Akkumulált / Halmozott Nézet")
-        is_accumulated = st.sidebar.checkbox("Akkumulált értékek (halmozott összeg)", value=stat_settings.get("is_accumulated", False))
-        initial_accumulated_val = st.sidebar.number_input("Kezdő érték (opcionális, ha nincs, az első adattól számolja):", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
+        st.sidebar.subheader("🔄 Kezdő Érték / Alap Hozzáadása")
+        is_accumulated = st.sidebar.checkbox("Kezdő érték / Alap alkalmazása", value=stat_settings.get("is_accumulated", False))
+        initial_accumulated_val = st.sidebar.number_input("Kezdő érték (Ha 0, az első adat lesz az alap):", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
         
         # Életvonal és Célkitűzés beállítások biztonságos fallbackkel
         old_goal_val = stat_settings.get("goal_value", 0.0)
@@ -267,15 +267,14 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
             
-            # Akkumulált értékek kalkulációja kezdőértékkel vagy az első elemtől
+            # Kezdő érték / alap hozzáadása kalkuláció
             if is_accumulated and raw_items:
-                running_total = float(initial_accumulated_val)
-                accumulated_items = []
+                base_val = float(initial_accumulated_val) if initial_accumulated_val != 0 else float(raw_items[0][1])
+                acc_items = []
                 for item in raw_items:
-                    running_total += float(item[1])
-                    note_val = item[2] if len(item) > 2 else ""
-                    accumulated_items.append([item[0], running_total, note_val])
-                raw_items = accumulated_items
+                    new_val = float(item[1]) + base_val
+                    acc_items.append([item[0], new_val, item[2] if len(item) > 2 else ""])
+                raw_items = acc_items
 
             y_vals_temp = [item[1] for item in raw_items] if raw_items else []
             
@@ -320,7 +319,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line=dict(color=color, width=6), showlegend=False, hoverinfo='skip'
                         ))
 
-                    # Életvonal rajzolása felirat nélkül (csak a vonal)
+                    # Életvonal rajzolása felirat nélkül
                     if show_survival_line and calc_survival_val > 0:
                         fig.add_hline(
                             y=calc_survival_val,
@@ -517,12 +516,11 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
                     
                     if s_settings.get("is_accumulated", False) and card_items:
-                        init_acc = float(s_settings.get("initial_accumulated_val", 0.0))
-                        running_tot = init_acc
+                        base_v = float(s_settings.get("initial_accumulated_val", 0.0)) if s_settings.get("initial_accumulated_val", 0.0) != 0 else float(card_items[0][1])
                         acc_card_items = []
                         for item in card_items:
-                            running_tot += float(item[1])
-                            acc_card_items.append([item[0], running_tot, item[2] if len(item)>2 else ""])
+                            new_v = float(item[1]) + base_v
+                            acc_card_items.append([item[0], new_v, item[2] if len(item)>2 else ""])
                         card_items = acc_card_items
 
                     card_y = [item[1] for item in card_items] if card_items else []
