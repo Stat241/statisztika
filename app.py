@@ -9,7 +9,6 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
 # ================= NYOMTATÁSI CSS (A4 Fekvő formátumra igazítva, csak a grafikonra) =================
-# A betűtípus globális felülírását kivettük, így a Streamlit ikonok újra működnek!
 st.markdown("""
     <style>
     @media print {
@@ -49,24 +48,26 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ================= FELHASZNÁLÓK KEZELÉSE =================
+# ================= FELHASZNÁLÓK KEZELÉSE (BIZTOSÍTOTT ADMIN HÁTTÉRREL) =================
 USERS_FILE = "users.json"
 
 def load_users():
+    users = {}
     if os.path.exists(USERS_FILE):
         try:
             with open(USERS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                users = json.load(f)
         except Exception:
             pass
-    default_users = {
-        "admin": {
+    
+    # Biztosítjuk, hogy az admin mindig létezzen és a helyes jelszóval működjön!
+    if "admin" not in users:
+        users["admin"] = {
             "password": "titkosjelszo2026",
             "allowed_stats": ["*"]
         }
-    }
-    save_users(default_users)
-    return default_users
+        save_users(users)
+    return users
 
 def save_users(users_data):
     with open(USERS_FILE, "w", encoding="utf-8") as f:
@@ -297,7 +298,7 @@ with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
     else:
         st.info("Még nincsenek elérhető archivált elemek.")
 
-# --- ÚJ STATISZTIKA LÉTREHOZÁSA (FORDÍTOTT STATISZTIKA OPCIÓVAL) ---
+# --- ÚJ STATISZTIKA LÉTREHOZÁSA (FORDÍTOTT OPCIÓVAL) ---
 with st.sidebar.expander("➕ Új statisztika létrehozása"):
     new_stat_name = st.text_input("Statisztika neve:", placeholder="pl. Ügyfelek száma")
     new_stat_unit = st.text_input("Mértékegység / Kategória:", placeholder="pl. fő, db, Ft")
@@ -316,7 +317,6 @@ with st.sidebar.expander("➕ Új statisztika létrehozása"):
             else:
                 st.warning("Ilyen nevű statisztika már létezik!")
 
-# OPCIÓK KIEGÉSZÍTÉSE AZ ÖSSZEVETŐ NÉZETTEL
 stat_options = ["📋 ÖSSZESÍTŐ NÉZET", "📈 TÖBB STATISZTIKA ÖSSZEVETÉSE"] + stat_names
 
 if "selected_stat_override" in st.session_state and st.session_state["selected_stat_override"] in stat_options:
@@ -372,7 +372,6 @@ if selected_stat == "📈 TÖBB STATISZTIKA ÖSSZEVETÉSE":
     selected_multi_stats = st.multiselect("Válassz statisztikákat az összevetéshez:", stat_names, default=stat_names[:2] if len(stat_names)>=2 else stat_names)
     
     if selected_multi_stats:
-        # --- NYOMTATÁS GOMB ---
         components.html("""
             <button onclick="window.parent.print()" style="
                 padding: 10px 24px; 
@@ -388,8 +387,6 @@ if selected_stat == "📈 TÖBB STATISZTIKA ÖSSZEVETÉSE":
         """, height=60)
         
         fig = go.Figure()
-        
-        # Egységes, jól megkülönböztethető színek palettája
         color_palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
         
         for idx, stat_name in enumerate(selected_multi_stats):
@@ -404,7 +401,6 @@ if selected_stat == "📈 TÖBB STATISZTIKA ÖSSZEVETÉSE":
             
             trace_color = color_palette[idx % len(color_palette)]
             
-            # Minden statisztika egyedi színnel, NINCS piros-zöld fel/le színkódolás
             fig.add_trace(go.Scatter(
                 x=x_dates,
                 y=y_vals,
@@ -414,7 +410,6 @@ if selected_stat == "📈 TÖBB STATISZTIKA ÖSSZEVETÉSE":
                 marker=dict(size=12, color=trace_color)
             ))
             
-            # Értékek feliratozása
             for x_val, y_val, txt in zip(x_dates, y_vals, formatted_texts):
                 fig.add_annotation(
                     x=x_val,
@@ -487,7 +482,7 @@ if enable_date_filter:
         start_date_filter = st.sidebar.date_input("Kezdő dátum", value=min_d, min_value=min_d, max_value=max_d)
         end_date_filter = st.sidebar.date_input("Záró dátum", value=max_d, min_value=min_d, max_value=max_d)
 
-# --- ÉRTÉK TENGELY & GRAFIKON SZÉLESSÉG ---
+# --- ÉRTÉK TENGELY & SZÉLESSÉG ---
 st.sidebar.subheader("📐 Érték Tengely & Vonalak")
 col_min, col_max, col_step = st.sidebar.columns(3)
 
@@ -617,7 +612,6 @@ with col_right:
                 x1, y1 = x_numeric[i], y_vals[i]
                 x2, y2 = x_numeric[i+1], y_vals[i+1]
                 
-                # Fordított logika: ha inverted, a csökkenés a jó (zöld)
                 if is_stat_inverted_check:
                     color = "#00C853" if y2 <= y1 else "#FF1744"
                 else:
@@ -684,7 +678,7 @@ with col_right:
                     yanchor="bottom"
                 )
 
-            # --- NÉV ÉS POSZT FELIRAT MEGNÖVELT BETŰMÉRETTEL ---
+            # --- MEGNÖVELT NÉV ÉS POSZT A BAL FELSŐ SARokban (ELŐTAGOK NÉLKÜL) ---
             if person_name or person_post:
                 header_lines = []
                 if person_name:
@@ -702,7 +696,6 @@ with col_right:
                     font=dict(family="Arial Black")
                 )
 
-            # A Y tengely beállítása: ha fordított, akkor autorange='reversed' (0 felül), ha nem, tozero (0 alul).
             yaxis_dict = dict(
                 title=dict(text="", font=dict(color="#000000", size=1)), 
                 showgrid=True,
