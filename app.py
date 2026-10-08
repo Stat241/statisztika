@@ -274,7 +274,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             stat_data_raw = db["stats"][selected_stat]["data"]
             
             if stat_data_raw:
-                # Előkészítjük az adatokat külön Dátum és Időpont oszlopra
                 table_rows = []
                 for item in stat_data_raw:
                     dt_str = str(item[0]).strip()
@@ -305,7 +304,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     key=f"editor_{selected_stat}"
                 )
                 
-                # Összegyűjtjük a módosított értékeket
                 updated_data = []
                 for _, row in edited_df.iterrows():
                     d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
@@ -396,7 +394,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     unique_labels = [item["label"] for item in raw_items]
 
                 else:
-                    # NAPI ADATOK (Sima napok összeadva, Csütörtökön 14:00 előtti és utáni külön pont EGYETLEN függőleges vonalon)
                     df_temp["Date_Only"] = df_temp["Sort_Key"].dt.strftime("%Y-%m-%d")
                     
                     def get_bucket_type(row):
@@ -541,13 +538,16 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
+                    # --- FEJLÉC (NÉV ÉS POSZT) HELYES TÉRKÖZZEL ÉS SORKÖZZEL ---
                     if person_name or person_post:
                         header_lines = []
-                        if person_name: header_lines.append(f"<span style='font-size: 30px;'><b>{person_name}</b></span>")
-                        if person_post: header_lines.append(f"<span style='font-size: 22px; color: #000000;'>{person_post}</span>")
+                        if person_name: 
+                            header_lines.append(f"<span style='font-size: 30px; line-height: 1.2; display: inline-block;'><b>{person_name}</b></span>")
+                        if person_post: 
+                            header_lines.append(f"<span style='font-size: 22px; color: #000000; line-height: 1.6; display: inline-block;'>{person_post}</span>")
                         
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.12,
+                            xref="paper", yref="paper", x=0.0, y=1.16,
                             text="<br>".join(header_lines), showarrow=False,
                             align="left", xanchor="left", yanchor="bottom", font=dict(family="Arial Black", color="#000000")
                         )
@@ -555,7 +555,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=1.0, y=1.12,
+                            xref="paper", yref="paper", x=1.0, y=1.16,
                             text=f"🎯 Cél: {goal_fmt}",
                             showarrow=False,
                             align="right", xanchor="right", yanchor="bottom",
