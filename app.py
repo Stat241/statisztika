@@ -13,19 +13,6 @@ st.set_page_config(page_title="Statisztika Kezelő Rendszer", layout="wide", pag
 st.markdown("""
     <style>
     @media print {
-        @page { 
-            size: A4 landscape; 
-            margin: 10mm; 
-        }
-        body, html {
-            background-color: #ffffff !important;
-            width: 297mm !important;
-            height: 210mm !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -34,30 +21,6 @@ st.markdown("""
         iframe,
         .no-print {
             display: none !important;
-        }
-        body * {
-            visibility: hidden !important;
-        }
-        .stPlotlyChart, .stPlotlyChart *, .js-plotly-plot, .js-plotly-plot *, .js-plotly-plot svg, .js-plotly-plot .main-svg, .js-plotly-plot .svg-container {
-            visibility: visible !important;
-        }
-        .stPlotlyChart {
-            position: absolute !important;
-            left: 10mm !important;
-            top: 10mm !important;
-            width: 277mm !important;
-            height: 190mm !important;
-            max-width: 277mm !important;
-            max-height: 190mm !important;
-            border: 4px solid #000000 !important;
-            box-sizing: border-box !important;
-            padding: 5mm !important;
-            background: #ffffff !important;
-            margin: 0 !important;
-        }
-        .js-plotly-plot, .js-plotly-plot .svg-container {
-            width: 100% !important;
-            height: 100% !important;
         }
     }
     </style>
@@ -285,7 +248,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     cursor: pointer;
                     font-weight: bold;
                     box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
-                ">🖨️ Nyomtatás A4-re</button>
+                ">🖨️ Nyomtatás</button>
             """, height=50)
 
             stat_data_raw = db["stats"][selected_stat]["data"]
@@ -379,7 +342,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
-                    # Értékek feliratozása (megnövelt betűméret, első elem picit jobbra tolva, bal szélen kezdődve)
+                    # Értékek feliratozása
                     for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
                         if idx == 0:
                             fig.add_annotation(
@@ -421,8 +384,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         title=dict(text="", font=dict(color="#000000", size=1)), 
                         showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
                         tickfont=dict(color="#000000", size=18, family="Arial Black"),
-                        showline=True, linecolor="#000000", linewidth=3,
-                        mirror=True
+                        showline=True, linecolor="#000000", linewidth=3
                     )
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
@@ -442,7 +404,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
                             tickfont=dict(color="#000000", size=15, family="Arial Black"),
                             showline=True, linecolor="#000000", linewidth=3,
-                            mirror=True,
                             range=[0, len(x_numeric) - 1] if len(x_numeric) > 1 else [-0.5, 0.5]
                         ),
                         yaxis=yaxis_dict
@@ -518,8 +479,8 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
             fig.update_layout(
                 title=dict(text=f"<b>Statisztikák Relatív Összevetése ({comp_period_type})</b>", x=0.5, font=dict(size=36, color="#000000")),
                 plot_bgcolor="white", paper_bgcolor="white", margin=dict(t=120, b=120, l=60, r=40),
-                xaxis=dict(tickmode="array", tickvals=list(range(1, max_len + 1)), ticktext=[f"{i}." for i in range(1, max_len + 1)], title=dict(text="Relatív Időszak Sorszáma", font=dict(size=16, color="#000000")), showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5, showline=True, linecolor="#000000", linewidth=3, mirror=True, tickfont=dict(color="#000000", size=15, family="Arial Black")),
-                yaxis=dict(rangemode="tozero", showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5, showline=True, linecolor="#000000", linewidth=3, mirror=True, tickfont=dict(color="#000000", size=18, family="Arial Black")),
+                xaxis=dict(tickmode="array", tickvals=list(range(1, max_len + 1)), ticktext=[f"{i}." for i in range(1, max_len + 1)], title=dict(text="Relatív Időszak Sorszáma", font=dict(size=16, color="#000000")), showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5, showline=True, linecolor="#000000", linewidth=3, tickfont=dict(color="#000000", size=15, family="Arial Black")),
+                yaxis=dict(rangemode="tozero", showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5, showline=True, linecolor="#000000", linewidth=3, tickfont=dict(color="#000000", size=18, family="Arial Black")),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=16))
             )
             st.plotly_chart(fig, use_container_width=True)
@@ -614,14 +575,14 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                 for x_val, y_val, txt in zip(x_num, card_y, formatted_t):
                                     fig_card.add_annotation(x=x_val, y=y_val, text=txt, showarrow=False, yshift=10, textangle=-90, font=dict(size=10, color="#000000", family="Arial Black"), xanchor="center", yanchor="bottom")
                                 
-                                yaxis_card = dict(showgrid=True, gridcolor="#F1F5F9", gridwidth=1.5, tickfont=dict(color="#000", size=11, family="Arial Black"), showline=True, linecolor="#000", linewidth=1.5, mirror=True)
+                                yaxis_card = dict(showgrid=True, gridcolor="#F1F5F9", gridwidth=1.5, tickfont=dict(color="#000", size=11, family="Arial Black"), showline=True, linecolor="#000", linewidth=1.5)
                                 if s_inverted: yaxis_card["autorange"] = "reversed"
                                 else: yaxis_card["rangemode"] = "tozero"
                                 
                                 fig_card.update_layout(
                                     height=300, plot_bgcolor="white", paper_bgcolor="white",
                                     margin=dict(t=10, b=40, l=40, r=20),
-                                    xaxis=dict(tickmode="array", tickvals=x_num, ticktext=x_fmt, tickangle=-45, showgrid=True, gridcolor="#F1F5F9", gridwidth=1.5, tickfont=dict(color="#000", size=10, family="Arial Black"), showline=True, linecolor="#000", linewidth=1.5, mirror=True),
+                                    xaxis=dict(tickmode="array", tickvals=x_num, ticktext=x_fmt, tickangle=-45, showgrid=True, gridcolor="#F1F5F9", gridwidth=1.5, tickfont=dict(color="#000", size=10, family="Arial Black"), showline=True, linecolor="#000", linewidth=1.5),
                                     yaxis=yaxis_card
                                 )
                                 st.plotly_chart(fig_card, use_container_width=True, config={'displayModeBar': False})
