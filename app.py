@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 # ================= OLDAL ALAPBEÁLLÍTÁSAI =================
 st.set_page_config(page_title="Statisztika Kezelő Rendszer", layout="wide", page_icon="📊")
 
-# ================= NYOMTATÁSI CSS (EXAKT 1 OLDALAS A4 FEKVŐ OPTIMALIZÁLÁS) =================
+# ================= NYOMTATÁSI CSS (PONTOSAN 100% SZÉLESSÉG & MARGÓ NULLÁZÁS) =================
 st.markdown("""
     <style>
     @media print {
@@ -18,7 +18,7 @@ st.markdown("""
             margin: 0mm !important;
         }
         
-        /* Rejtett Streamlit elemek nyomtatáskor */
+        /* Felesleges elemek teljes elrejtése */
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -31,9 +31,10 @@ st.markdown("""
             display: none !important;
         }
         
-        /* Strict 1 oldal korlátozás - nem enged 2. oldalt generálni */
+        /* Konténerek kényszerítése pontosan 100%-ra, margók nélkül */
         html, body, [data-testid="stAppViewContainer"], .main, .block-container, [data-testid="stVerticalBlock"], .stTabs, [data-testid="stTabContent"] {
             width: 100% !important;
+            max-width: 100% !important;
             height: 100vh !important;
             max-height: 100vh !important;
             margin: 0 !important;
@@ -44,11 +45,13 @@ st.markdown("""
             page-break-inside: avoid !important;
         }
         
-        /* Grafikon kitöltése 1 oldalra méretezve */
+        /* Grafikon pontos illesztése */
         .stPlotlyChart, .js-plotly-plot, .plot-container {
             width: 100% !important;
-            height: 95vh !important;
-            margin: 0 auto !important;
+            max-width: 100% !important;
+            height: 98vh !important;
+            margin: 0 !important;
+            padding: 0 !important;
             page-break-inside: avoid !important;
         }
     }
@@ -565,6 +568,22 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
+                    # NÉV ÉS POSZT ANNOTÁCIÓK A BAL SZÉLEN (HIBAMENTES PLOTLY KOORDINÁTÁK)
+                    if person_name:
+                        fig.add_annotation(
+                            xref="paper", yref="paper", x=0.0, y=1.20,
+                            text=f"<b>{person_name}</b>", showarrow=False,
+                            align="left", xanchor="left", yanchor="bottom",
+                            font=dict(size=26, family="Arial Black", color="#000000")
+                        )
+                    if person_post:
+                        fig.add_annotation(
+                            xref="paper", yref="paper", x=0.0, y=1.10,
+                            text=person_post, showarrow=False,
+                            align="left", xanchor="left", yanchor="bottom",
+                            font=dict(size=20, family="Arial Black", color="#000000")
+                        )
+
                     # CÉLKITŰZÉS ANNOTÁCIÓ
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
@@ -587,25 +606,16 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     xaxis_range = [-0.3, max(unique_x) + 0.3] if len(unique_x) > 1 else [-0.5, 0.5]
 
-                    # ELEMEK TÖKÉLETES EGYSÉGES CÍMSORBA INTEGRÁLÁSA (NEM CSÚSZIK EL BÁRMILYEN NÉZETBEN)
-                    person_str = f"<b>{person_name}</b>" if person_name else ""
-                    post_str = f"<br>{person_post}" if person_post else ""
-
                     layout_args = dict(
                         title=dict(
-                            text=(
-                                f"<div style='width:100%; display:flex; justify-content:space-between; align-items:flex-start;'>"
-                                f"<div style='text-align:left; font-size:26px; font-family:Arial Black; color:#000000;'>{person_str}{post_str}</div>"
-                                f"<div style='text-align:center; font-size:32px; font-family:Arial Black; color:#000000;'><b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span></div>"
-                                f"<div style='width:150px;'></div>"
-                                f"</div>"
-                            ),
-                            x=0.0, xref="paper", y=0.98, xanchor='left', yanchor='bottom'
+                            text=f"<b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
+                            x=0.5, xref="paper", xanchor='center', yanchor='top',
+                            font=dict(size=30, color="#000000")
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
                         autosize=True,
                         height=620,
-                        margin=dict(t=150, b=100, l=80, r=40),
+                        margin=dict(t=160, b=120, l=80, r=40),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
                             tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
@@ -940,3 +950,4 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                 st.rerun()
         else:
             st.info("Az archívum üres.")
+            
