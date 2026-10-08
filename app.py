@@ -182,11 +182,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
-        # Kezdő érték / Alap hozzáadása beállítások
+        # Akkumulált / Halmozott összeg megjelenítése zárójelben beállítások
         st.sidebar.markdown("---")
-        st.sidebar.subheader("🔄 Kezdő Érték / Alap Hozzáadása")
-        is_accumulated = st.sidebar.checkbox("Kezdő érték / Alap alkalmazása", value=stat_settings.get("is_accumulated", False))
-        initial_accumulated_val = st.sidebar.number_input("Kezdő érték (Ha 0, az első adat lesz az alap):", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
+        st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
+        show_acc_in_brackets = st.sidebar.checkbox("Akkumulált összeg megjelenítése a pontok alatt", value=stat_settings.get("show_acc_in_brackets", False))
+        initial_accumulated_val = st.sidebar.number_input("Kezdő alap (Ha 0, az első adat lesz az alap):", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
         
         # Életvonal és Célkitűzés beállítások biztonságos fallbackkel
         old_goal_val = stat_settings.get("goal_value", 0.0)
@@ -211,7 +211,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 "ymin": ymin, "ymax": ymax, "ystep": ystep, 
                 "survival_type": survival_type, "survival_value": survival_value, "show_survival": show_survival_line,
                 "goal_type": goal_type, "goal_val_target": goal_value,
-                "is_accumulated": is_accumulated,
+                "show_acc_in_brackets": show_acc_in_brackets,
                 "initial_accumulated_val": initial_accumulated_val
             }
             db["stats"][selected_stat]["inverted"] = is_stat_inverted_check
@@ -267,14 +267,14 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
             
-            # Kezdő érték / alap hozzáadása kalkuláció
-            if is_accumulated and raw_items:
+            # Akkumulált értékek kiszámítása háttérben, ha be van kapcsolva
+            accumulated_vals = []
+            if raw_items:
                 base_val = float(initial_accumulated_val) if initial_accumulated_val != 0 else float(raw_items[0][1])
-                acc_items = []
+                running_tot = base_val
                 for item in raw_items:
-                    new_val = float(item[1]) + base_val
-                    acc_items.append([item[0], new_val, item[2] if len(item) > 2 else ""])
-                raw_items = acc_items
+                    running_tot += float(item[1])
+                    accumulated_vals.append(running_tot)
 
             y_vals_temp = [item[1] for item in raw_items] if raw_items else []
             
@@ -328,11 +328,27 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line_width=4
                         )
 
-                    formatted_texts = [f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}" for val in y_vals]
+                    # Címkék előkészítése (időszakos érték + opcionálisan alatta zárójelben az akkumulált)
+                    formatted_texts = []
+                    for idx, val in enumerate(y_vals):
+                        v_str = f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}"
+                        if show_acc_in_brackets and accumulated_vals:
+                            acc_val = accumulated_vals[idx]
+                            acc_str = f"{int(acc_val):,}".replace(",", " ") if float(acc_val).is_integer() else f"{acc_val}"
+                            formatted_texts.append(f"{v_str}<br><span style='font-size:12px; color:#555555;'>({acc_str} {current_unit})</span>")
+                        else:
+                            formatted_texts.append(v_str)
+
                     x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
                     x_formatted = [f"{d.year}. {d.month:02d}. {d.day:02d}." for d in x_dates]
 
-                    hover_texts = [f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}" if n else f"Dátum: {dt}<br>Érték: {txt}" for dt, txt, n in zip(x_formatted, formatted_texts, notes)]
+                    hover_texts = []
+                    for dt, val, acc, n in zip(x_formatted, y_vals, accumulated_vals, notes):
+                        v_str = f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}"
+                        acc_str = f"{int(acc):,}".replace(",", " ") if float(acc).is_integer() else f"{acc}"
+                        h_txt = f"Dátum: {dt}<br>Érték: {v_str}<br>Akkumulált: {acc_str} {current_unit}"
+                        if n: h_txt += f"<br>Megjegyzés: {n}"
+                        hover_texts.append(h_txt)
 
                     fig.add_trace(go.Scatter(
                         x=x_numeric, y=y_vals, mode='markers',
@@ -343,7 +359,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     for x_val, y_val, txt in zip(x_numeric, y_vals, formatted_texts):
                         fig.add_annotation(
                             x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, textangle=-90,
-                            font=dict(size=15, color="#000000", family="Arial Black"),
+                            font=dict(size=14, color="#000000", family="Arial Black"),
                             xanchor="center", yanchor="bottom"
                         )
 
@@ -514,15 +530,6 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     
                     card_surv_val = s_settings.get("survival_value", s_settings.get("goal_value", 0.0))
                     card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
-                    
-                    if s_settings.get("is_accumulated", False) and card_items:
-                        base_v = float(s_settings.get("initial_accumulated_val", 0.0)) if s_settings.get("initial_accumulated_val", 0.0) != 0 else float(card_items[0][1])
-                        acc_card_items = []
-                        for item in card_items:
-                            new_v = float(item[1]) + base_v
-                            acc_card_items.append([item[0], new_v, item[2] if len(item)>2 else ""])
-                        card_items = acc_card_items
-
                     card_y = [item[1] for item in card_items] if card_items else []
                     
                     condition_text, condition_color = calculate_stat_condition(s_data_raw, card_surv_val)
