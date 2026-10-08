@@ -187,7 +187,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
         show_acc_in_brackets = st.sidebar.checkbox("Akkumulált összeg megjelenítése a pontok alatt", value=stat_settings.get("show_acc_in_brackets", False))
-        initial_accumulated_val = st.sidebar.number_input("Kezdő alap (Ha 0, az első adat lesz az alap):", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
+        initial_accumulated_val = st.sidebar.number_input("Kezdő alap:", value=float(stat_settings.get("initial_accumulated_val", 0.0)), step=1.0)
         
         # Életvonal és Célkitűzés beállítások biztonságos fallbackkel
         old_goal_val = stat_settings.get("goal_value", 0.0)
@@ -271,11 +271,10 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             stat_data_raw = db["stats"][selected_stat]["data"]
             raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
             
-            # Akkumulált értékek kiszámítása háttérben, ha be van kapcsolva
+            # Akkumulált értékek pontos kiszámítása futó összegként
             accumulated_vals = []
             if raw_items:
-                base_val = float(initial_accumulated_val) if initial_accumulated_val != 0 else float(raw_items[0][1])
-                running_tot = base_val
+                running_tot = float(initial_accumulated_val)
                 for item in raw_items:
                     running_tot += float(item[1])
                     accumulated_vals.append(running_tot)
@@ -424,7 +423,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
                             tickfont=dict(color="#000000", size=15, family="Arial Black"),
                             showline=True, linecolor="#000000", linewidth=3,
-                            range=[-0.5 * point_spacing, x_numeric[-1] + 0.5 * point_spacing] if len(x_numeric) > 1 else [-0.5, 0.5]
+                            range=[-0.5, x_numeric[-1] + 0.5] if len(x_numeric) > 1 else [-0.5, 0.5]
                         ),
                         yaxis=yaxis_dict
                     )
@@ -544,6 +543,16 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     
                     card_surv_val = s_settings.get("survival_value", s_settings.get("goal_value", 0.0))
                     card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
+                    
+                    if s_settings.get("is_accumulated", False) and card_items:
+                        base_v = float(s_settings.get("initial_accumulated_val", 0.0))
+                        acc_card_items = []
+                        running_tot = base_v
+                        for item in card_items:
+                            running_tot += float(item[1])
+                            acc_card_items.append([item[0], running_tot, item[2] if len(item)>2 else ""])
+                        card_items = acc_card_items
+
                     card_y = [item[1] for item in card_items] if card_items else []
                     
                     condition_text, condition_color = calculate_stat_condition(s_data_raw, card_surv_val)
