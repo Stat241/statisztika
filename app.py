@@ -104,14 +104,14 @@ def save_archive(archive_data):
     with open(ARCHIVE_FILE, "w", encoding="utf-8") as f:
         json.dump(archive_data, f, ensure_ascii=False, indent=2)
 
-def calculate_stat_condition(data, ref_val=0):
+def calculate_stat_condition(data, survival_line=0):
     if not data or len(data) < 1:
         return "Normál", "gray"
     
     sorted_d = sorted(data, key=lambda x: str(x[0]))
     last_val = sorted_d[-1][1]
     
-    if ref_val > 0 and last_val < ref_val:
+    if survival_line > 0 and last_val < survival_line:
         return "Nem létezés (Életvonal alatt)", "red"
     
     if len(data) < 2:
@@ -164,7 +164,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     else:
         selected_stat = st.sidebar.selectbox("Választott statisztika:", stat_names)
         
-        st.sidebar.subheader("⚙️ Grafikon & Életvonal Beállítások")
+        st.sidebar.subheader("⚙️ Grafikon & Határok Beállítása")
         current_unit = db["stats"][selected_stat].get("unit", "")
         stat_group = db["stats"][selected_stat].get("group", "Egyéb")
         stat_settings = db.get("settings", {}).get(selected_stat, {})
@@ -182,17 +182,24 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
+        # Külön Életvonal és Célkitűzés
         st.sidebar.markdown("---")
-        st.sidebar.subheader("🎯 Célkitűzés & Életvonal")
-        goal_type = st.sidebar.selectbox("Cél / Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0)
-        goal_value = st.sidebar.number_input("Érték mértéke:", value=float(stat_settings.get("goal_value", 0.0)), step=1.0)
-        show_ref_line = st.sidebar.checkbox("Életvonal rajzolása a grafikonra", value=stat_settings.get("show_ref", True))
+        st.sidebar.subheader("🛡️ Életvonal (Túlélési határ)")
+        survival_type = st.sidebar.selectbox("Életvonal típusa:", ["Nincs", "Fix érték (db/Ft)"], index=0, key="surv_type")
+        survival_value = st.sidebar.number_input("Életvonal értéke:", value=float(stat_settings.get("survival_value", 0.0)), step=1.0)
+        show_survival_line = st.sidebar.checkbox("Életvonal rajzolása a grafikonra", value=stat_settings.get("show_survival", True))
+
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🎯 Célkitűzés")
+        goal_type = st.sidebar.selectbox("Cél típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0, key="goal_type")
+        goal_value = st.sidebar.number_input("Cél mértéke:", value=float(stat_settings.get("goal_value", 0.0)), step=1.0)
 
         if st.sidebar.button("💾 Beállítások Mentése"):
             if "settings" not in db: db["settings"] = {}
             db["settings"][selected_stat] = {
                 "person_name": person_name, "person_post": person_post, "chart_width": chart_width_val,
-                "ymin": ymin, "ymax": ymax, "ystep": ystep, "show_ref": show_ref_line,
+                "ymin": ymin, "ymax": ymax, "ystep": ystep, 
+                "survival_type": survival_type, "survival_value": survival_value, "show_survival": show_survival_line,
                 "goal_type": goal_type, "goal_value": goal_value
             }
             db["stats"][selected_stat]["inverted"] = is_stat_inverted_check
@@ -248,11 +255,16 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
             y_vals_temp = [item[1] for item in raw_items] if raw_items else []
-            calculated_ref_val = 0.0
+            
+            # Életvonal kiszámítása
+            calc_survival_val = survival_value if survival_type == "Fix érték (db/Ft)" else 0.0
+
+            # Cél kiszámítása
+            calc_goal_val = 0.0
             if goal_type == "Fix érték (db/Ft)":
-                calculated_ref_val = goal_value
+                calc_goal_val = goal_value
             elif goal_type == "Százalékos növekedés (%)" and len(y_vals_temp) > 0:
-                calculated_ref_val = y_vals_temp[-1] * (1 + goal_value / 100)
+                calc_goal_val = y_vals_temp[-1] * (1 + goal_value / 100)
 
             if stat_data_raw:
                 date_range_str = ""
@@ -285,14 +297,15 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line=dict(color=color, width=6), showlegend=False, hoverinfo='skip'
                         ))
 
-                    if show_ref_line and goal_type != "Nincs" and calculated_ref_val > 0:
-                        val_str = f"{int(calculated_ref_val):,}".replace(",", " ") if float(calculated_ref_val).is_integer() else f"{calculated_ref_val}"
+                    # Életvonal rajzolása (piros határvonal)
+                    if show_survival_line and calc_survival_val > 0:
+                        surv_str = f"{int(calc_survival_val):,}".replace(",", " ") if float(calc_survival_val).is_integer() else f"{calc_survival_val}"
                         fig.add_hline(
-                            y=calculated_ref_val,
+                            y=calc_survival_val,
                             line_dash="solid",
                             line_color="#EF4444",
                             line_width=4,
-                            annotation_text=f" Életvonal: {val_str} {current_unit}",
+                            annotation_text=f" Életvonal: {surv_str} {current_unit}",
                             annotation_position="bottom right",
                             annotation_font=dict(size=18, color="#EF4444", family="Arial Black")
                         )
@@ -316,7 +329,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
-                    # Név és Poszt teljesen bal felül, fekete színnel, a címmel egy sorban
                     if person_name or person_post:
                         header_lines = []
                         if person_name: header_lines.append(f"<span style='font-size: 26px;'><b>{person_name}</b></span>")
@@ -366,12 +378,13 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     fig.update_layout(**layout_args)
                     st.plotly_chart(fig, use_container_width=False)
 
-            if goal_type != "Nincs" and calculated_ref_val > 0:
-                val_fmt = f"{int(calculated_ref_val):,}".replace(",", " ") if float(calculated_ref_val).is_integer() else f"{calculated_ref_val}"
+            # Külön megjelenített Célkitűzés doboz a grafikon alatt
+            if goal_type != "Nincs" and calc_goal_val > 0:
+                goal_fmt = f"{int(calc_goal_val):,}".replace(",", " ") if float(calc_goal_val).is_integer() else f"{calc_goal_val}"
                 st.markdown(f"""
-                    <div style="background-color: #F8FAFC; border: 2px dashed #CBD5E1; padding: 12px 20px; border-radius: 8px; margin-top: 10px;">
-                        <span style="font-size: 14px; color: #475569;"><b>🎯 Aktuális Célkitűzés ({goal_type}):</b></span>
-                        <span style="font-size: 20px; color: #EF4444; font-weight: bold; float: right;">{val_fmt} {current_unit}</span>
+                    <div style="background-color: #F8FAFC; border: 2px dashed #3B82F6; padding: 12px 20px; border-radius: 8px; margin-top: 10px;">
+                        <span style="font-size: 14px; color: #1E3A8A;"><b>🎯 Kitűzött Cél ({goal_type}):</b></span>
+                        <span style="font-size: 20px; color: #2563EB; font-weight: bold; float: right;">{goal_fmt} {current_unit}</span>
                     </div>
                 """, unsafe_allow_html=True)
 
@@ -479,16 +492,11 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     p_post = s_settings.get("person_post", "")
                     assigned_str = f"{p_name} ({p_post})" if p_name or p_post else "Nincs megadva"
                     
-                    card_goal_type = s_settings.get("goal_type", "Nincs")
-                    card_goal_val = s_settings.get("goal_value", 0.0)
-                    card_ref = 0.0
+                    card_surv_val = s_settings.get("survival_value", 0.0)
                     card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
                     card_y = [item[1] for item in card_items] if card_items else []
                     
-                    if card_goal_type == "Fix érték (db/Ft)": card_ref = card_goal_val
-                    elif card_goal_type == "Százalékos növekedés (%)" and card_y: card_ref = card_y[-1] * (1 + card_goal_val / 100)
-                    
-                    condition_text, condition_color = calculate_stat_condition(s_data_raw, card_ref)
+                    condition_text, condition_color = calculate_stat_condition(s_data_raw, card_surv_val)
                     
                     with cols[j]:
                         with st.container(border=True):
@@ -515,8 +523,8 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                     color = "#00C853" if (y2 <= y1 if s_inverted else y2 >= y1) else "#FF1744"
                                     fig_card.add_trace(go.Scatter(x=[x1, x2], y=[y1, y2], mode='lines', line=dict(color=color, width=3.5), showlegend=False, hoverinfo='skip'))
                                 
-                                if card_ref > 0:
-                                    fig_card.add_hline(y=card_ref, line_dash="dash", line_color="#EF4444", line_width=2)
+                                if card_surv_val > 0:
+                                    fig_card.add_hline(y=card_surv_val, line_dash="dash", line_color="#EF4444", line_width=2)
 
                                 formatted_t = [f"{int(y):,} {s_unit}".replace(",", " ") if float(y).is_integer() else f"{y} {s_unit}" for y in card_y]
                                 x_fmt = [datetime.strptime(str(item[0]), "%Y-%m-%d").strftime("%b %d") for item in card_items]
