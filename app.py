@@ -314,7 +314,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line_width=4
                         )
 
-                    # Címkék előkészítése (Kumulatív összeg alá rendezve <br> segítségével)
+                    # Címkék előkészítése: Az adott érték van felül, alatta a kumulatív zárójelben
                     formatted_texts = []
                     for idx, val in enumerate(y_vals):
                         v_str = f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}"
@@ -331,7 +331,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     hover_texts = []
                     for dt, val, acc, n in zip(x_formatted, y_vals, accumulated_vals, notes):
                         v_str = f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}"
-                        acc_str = f"{int(acc):,}".replace(",", " ") if float(acc).is_integer() else f"{acc}"
+                        acc_str = f"{int(acc):,}".replace(",", " ") if float(acc_val).is_integer() else f"{acc}"
                         h_txt = f"Dátum: {dt}<br>Érték: {v_str}<br>Akkumulált: {acc_str} {current_unit}"
                         if n: h_txt += f"<br>Megjegyzés: {n}"
                         hover_texts.append(h_txt)
@@ -342,20 +342,13 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
-                    # Értékek feliratozása enyhén elforgatva (-75 fok)
+                    # Értékek feliratozása (-75 fokos szögben, kicsit jobbra tolva xshift-tel)
                     for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
-                        if idx == 0:
-                            fig.add_annotation(
-                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, xshift=14, textangle=-75,
-                                font=dict(size=14, color="#000000", family="Arial Black"),
-                                xanchor="left", yanchor="bottom"
-                            )
-                        else:
-                            fig.add_annotation(
-                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, textangle=-75,
-                                font=dict(size=14, color="#000000", family="Arial Black"),
-                                xanchor="center", yanchor="bottom"
-                            )
+                        fig.add_annotation(
+                            x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, xshift=10, textangle=-75,
+                            font=dict(size=14, color="#000000", family="Arial Black"),
+                            xanchor="left", yanchor="bottom"
+                        )
 
                     # Név és Poszt bal felül
                     if person_name or person_post:
@@ -476,9 +469,9 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
                 for x_val, y_val, txt, d_str in zip(x_idx_current, y_vals, formatted_texts, orig_dates):
                     annotation_text = f"{txt}<br>({d_str})" if show_dates_on_chart else txt
                     fig.add_annotation(
-                        x=x_val, y=y_val, text=annotation_text, showarrow=False, yshift=15, textangle=-75, 
+                        x=x_val, y=y_val, text=annotation_text, showarrow=False, yshift=15, xshift=10, textangle=-75, 
                         font=dict(size=11, color=trace_color, family="Arial Black"), 
-                        xanchor="center", yanchor="bottom"
+                        xanchor="left", yanchor="bottom"
                     )
             
             fig.update_layout(
@@ -579,8 +572,8 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                 
                                 for x_val, y_val, txt in zip(x_num, card_y, formatted_t):
                                     fig_card.add_annotation(
-                                        x=x_val, y=y_val, text=txt, showarrow=False, yshift=10, textangle=-75,
-                                        font=dict(size=9, color="#000000", family="Arial Black"), xanchor="center", yanchor="bottom"
+                                        x=x_val, y=y_val, text=txt, showarrow=False, yshift=10, xshift=5, textangle=-75,
+                                        font=dict(size=9, color="#000000", family="Arial Black"), xanchor="left", yanchor="bottom"
                                     )
                                 
                                 yaxis_card = dict(showgrid=True, gridcolor="#F1F5F9", gridwidth=1.5, tickfont=dict(color="#000", size=11, family="Arial Black"), showline=True, linecolor="#000", linewidth=1.5)
