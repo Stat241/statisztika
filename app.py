@@ -53,7 +53,6 @@ def load_users():
         except Exception:
             pass
             
-    # Alap teszt fiók teljes admin joggal és csoportokkal
     users["teszt"] = {
         "password": "123",
         "allowed_stats": ["*"],
@@ -74,6 +73,7 @@ def load_data():
         except Exception:
             pass
     return {
+        "groups": ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"],
         "stats": {
             "Bruttó Beérkezett Bevétel": {
                 "unit": "Ft",
@@ -126,15 +126,21 @@ def save_archive(archive_data):
     with open(ARCHIVE_FILE, "w", encoding="utf-8") as f:
         json.dump(archive_data, f, ensure_ascii=False, indent=2)
 
-# Állapot-meghatározó logika (Hub-szerű menedzsment alapján)
-def calculate_stat_condition(data):
-    if not data or len(data) < 2:
+# Állapot-meghatározó logika (Célvonal alatti rész = Nem létezés / Vészhelyzet)
+def calculate_stat_condition(data, ref_val=0):
+    if not data or len(data) < 1:
         return "Normál", "gray"
     
     sorted_d = sorted(data, key=lambda x: str(x[0]))
     last_val = sorted_d[-1][1]
-    prev_val = sorted_d[-2][1]
     
+    if ref_val > 0 and last_val < ref_val:
+        return "Nem létezés (Cél alatt)", "red"
+    
+    if len(data) < 2:
+        return "Normál", "blue"
+        
+    prev_val = sorted_d[-2][1]
     if last_val == 0 and prev_val == 0:
         return "Nem létezés", "red"
     elif last_val < prev_val:
@@ -142,12 +148,7 @@ def calculate_stat_condition(data):
     elif last_val == prev_val:
         return "Veszély", "yellow"
     else:
-        # Ha növekszik, nézzük a meredekséget
-        diff_pct = ((last_val - prev_val) / (prev_val if prev_val != 0 else 1)) * 100
-        if diff_pct > 20:
-            return "Bőség", "green"
-        else:
-            return "Normál", "blue"
+        return "Bőség / Normál", "green"
 
 # ================= SESSION STATE =================
 if "users" not in st.session_state: st.session_state.users = load_users()
@@ -157,6 +158,11 @@ if "current_user" not in st.session_state: st.session_state.current_user = None
 
 USERS = load_users()
 db = st.session_state.db
+
+# Biztosítjuk, hogy a 'groups' kulcs létezzen az adatbázisban
+if "groups" not in db:
+    db["groups"] = ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
+    save_data(db)
 
 # ================= BEJELENTKEZÉS =================
 def check_login():
@@ -190,7 +196,6 @@ allowed_groups = current_user_info["allowed_groups"]
 all_stat_names = list(db["stats"].keys())
 is_admin = "*" in allowed_stat_names or "*" in allowed_groups
 
-# Szűrés jogosultságok alapján
 if is_admin:
     stat_names = all_stat_names
 else:
@@ -251,13 +256,12 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
-        # Cél beállítások (% vagy db/Ft)
+        # Cél beállítások
         st.sidebar.markdown("---")
         st.sidebar.subheader("🎯 Célkitűzés")
         goal_type = st.sidebar.selectbox("Cél típusa:", ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"], index=0)
         goal_value = st.sidebar.number_input("Cél mértéke:", value=float(stat_settings.get("goal_value", 0.0)), step=1.0)
-
-        show_ref_line = st.sidebar.checkbox("Referencia / Cél vonal rajzolása", value=stat_settings.get("show_ref", True))
+        show_ref_line = st.sidebar.checkbox("Célvonal (Referencia) rajzolása", value=stat_settings.get("show_ref", True))
 
         if st.sidebar.button("💾 Beállítások Mentése"):
             if "settings" not in db: db["settings"] = {}
@@ -272,7 +276,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         col_left, col_right = st.columns([1, 2.5])
 
-        # BAL OLDAL: Adatbevitel és Táblázat (Megjegyzés mezővel is)
+        # BAL OLDAL: Adatbevitel és Táblázat
         with col_left:
             st.subheader(f"➕ Új adat ({selected_stat})")
             with st.form("add_data_form", clear_on_submit=True):
@@ -280,7 +284,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 input_val = st.number_input(f"Érték ({current_unit})", min_value=0.0, step=1.0)
                 input_note = st.text_input("Megjegyzés / Esemény ehhez a ponthoz:")
                 if st.form_submit_button("Adat Hozzáadása"):
-                    # Ellenőrizzük a struktúrát (ha régiek 2 eleműek, kiegészítjük 3 eleműre)
                     db["stats"][selected_stat]["data"].append([input_date.strftime("%Y-%m-%d"), input_val, input_note])
                     save_data(db)
                     st.rerun()
@@ -288,13 +291,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             st.subheader("📋 Adat-táblázat")
             stat_data_raw = db["stats"][selected_stat]["data"]
             if stat_data_raw:
-                # Normalizálás biztonság kedvéért (ha van 2 elemű a régiek közül)
-                normalized_data = []
-                for item in stat_data_raw:
-                    if len(item) == 2:
-                        normalized_data.append([item[0], item[1], ""])
-                    else:
-                        normalized_data.append(item)
+                normalized_data = [[item[0], item[1], item[2] if len(item) > 2 else ""] for item in stat_data_raw]
                 db["stats"][selected_stat]["data"] = normalized_data
 
                 df = pd.DataFrame(normalized_data, columns=["Dátum", f"Érték ({current_unit})", "Megjegyzés"])
@@ -304,32 +301,51 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 del_idx = st.number_input("Törlendő sor sorszáma (index):", min_value=0, max_value=len(df)-1 if len(df)>0 else 0, step=1)
                 if st.button("🔴 Sor Törlése") and len(df) > 0:
                     target_to_delete = df.iloc[int(del_idx)].tolist()
-                    # Keresés és törlés
                     for idx, row in enumerate(db["stats"][selected_stat]["data"]):
                         if row[0] == target_to_delete[0] and row[1] == target_to_delete[1]:
                             del db["stats"][selected_stat]["data"][idx]
                             save_data(db)
                             st.rerun()
 
-        # JOBB OLDAL: Interaktív Grafikon
+        # JOBB OLDAL: Interaktív Grafikon + Cél kiírás jobb oldalon
         with col_right:
-            components.html("""
-                <button onclick="window.parent.print()" style="
-                    padding: 10px 24px; 
-                    font-size: 16px; 
-                    background-color: #000000; 
-                    color: white; 
-                    border: none; 
-                    border-radius: 8px; 
-                    cursor: pointer;
-                    font-weight: bold;
-                    box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
-                ">🖨️ Nyomtatás A4-es papírra</button>
-            """, height=60)
+            # Fejléc sor nyomtatás gombbal és Jobb oldali Cél dobozzal
+            col_print, col_goal_box = st.columns([1, 1.5])
+            with col_print:
+                components.html("""
+                    <button onclick="window.parent.print()" style="
+                        padding: 10px 20px; 
+                        font-size: 15px; 
+                        background-color: #000000; 
+                        color: white; 
+                        border: none; 
+                        border-radius: 8px; 
+                        cursor: pointer;
+                        font-weight: bold;
+                        box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
+                    ">🖨️ Nyomtatás A4-re</button>
+                """, height=50)
+            
+            # Cél értékének kiszámítása a jobb oldali panelhez
+            calculated_ref_val = 0.0
+            raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
+            y_vals_temp = [item[1] for item in raw_items] if raw_items else []
+            if goal_type == "Fix érték (db/Ft)":
+                calculated_ref_val = goal_value
+            elif goal_type == "Százalékos növekedés (%)" and len(y_vals_temp) > 0:
+                calculated_ref_val = y_vals_temp[-1] * (1 + goal_value / 100)
+
+            with col_goal_box:
+                if goal_type != "Nincs" and calculated_ref_val > 0:
+                    val_fmt = f"{int(calculated_ref_val):,}".replace(",", " ") if float(calculated_ref_val).is_integer() else f"{calculated_ref_val}"
+                    st.markdown(f"""
+                        <div style="background-color: #F8FAFC; border: 2px dashed #E2E8F0; padding: 10px 15px; border-radius: 8px; text-align: right;">
+                            <span style="font-size: 14px; color: #64748B;"><b>Célkitűzés ({goal_type}):</b></span><br>
+                            <span style="font-size: 20px; color: #EF4444; font-weight: bold;">🎯 {val_fmt} {current_unit}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
 
             if stat_data_raw:
-                raw_items = sorted(stat_data_raw, key=lambda x: str(x[0]))
-                
                 date_range_str = ""
                 if len(raw_items) > 0:
                     try:
@@ -356,78 +372,51 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             color = "#00C853" if y2 >= y1 else "#FF1744"
                         
                         fig.add_trace(go.Scatter(
-                            x=[x1, x2],
-                            y=[y1, y2],
-                            mode='lines',
-                            line=dict(color=color, width=6),
-                            showlegend=False,
-                            hoverinfo='skip'
+                            x=[x1, x2], y=[y1, y2], mode='lines',
+                            line=dict(color=color, width=6), showlegend=False, hoverinfo='skip'
                         ))
 
-                    # Referencia / Cél vonal
-                    if show_ref_line and goal_type != "Nincs":
-                        ref_val = 0.0
-                        if goal_type == "Fix érték (db/Ft)":
-                            ref_val = goal_value
-                        elif goal_type == "Százalékos növekedés (%)" and len(y_vals) > 0:
-                            ref_val = y_vals[-1] * (1 + goal_value / 100)
-                        
-                        if ref_val > 0:
-                            fig.add_hline(
-                                y=ref_val,
-                                line_dash="solid",
-                                line_color="#FF1744",
-                                line_width=4,
-                                annotation_text=f" Cél: {ref_val}",
-                                annotation_position="bottom right",
-                                annotation_font=dict(size=18, color="#FF1744", family="Arial Black")
-                            )
+                    # Célvonal (Referencia) és Nem Létezés zóna alatta
+                    if show_ref_line and goal_type != "Nincs" and calculated_ref_val > 0:
+                        val_str = f"{int(calculated_ref_val):,}".replace(",", " ") if float(calculated_ref_val).is_integer() else f"{calculated_ref_val}"
+                        fig.add_hline(
+                            y=calculated_ref_val,
+                            line_dash="solid",
+                            line_color="#EF4444",
+                            line_width=4,
+                            annotation_text=f" Cél: {val_str} {current_unit}",
+                            annotation_position="bottom right",
+                            annotation_font=dict(size=18, color="#EF4444", family="Arial Black")
+                        )
 
                     formatted_texts = [f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}" for val in y_vals]
                     x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
                     x_formatted = [f"{d.year}. {d.month:02d}. {d.day:02d}." for d in x_dates]
 
-                    # Pontok hover információval (ha van megjegyzés, azt is mutatja)
                     hover_texts = [f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}" if n else f"Dátum: {dt}<br>Érték: {txt}" for dt, txt, n in zip(x_formatted, formatted_texts, notes)]
 
                     fig.add_trace(go.Scatter(
-                        x=x_numeric,
-                        y=y_vals,
-                        mode='markers',
+                        x=x_numeric, y=y_vals, mode='markers',
                         marker=dict(size=14, color="#1E293B"),
-                        hovertext=hover_texts,
-                        hoverinfo='text',
-                        showlegend=False
+                        hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
                     for x_val, y_val, txt in zip(x_numeric, y_vals, formatted_texts):
                         fig.add_annotation(
-                            x=x_val,
-                            y=y_val,
-                            text=txt,
-                            showarrow=False,
-                            yshift=15,
-                            textangle=-90,
+                            x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, textangle=-90,
                             font=dict(size=15, color="#000000", family="Arial Black"),
-                            xanchor="center",
-                            yanchor="bottom"
+                            xanchor="center", yanchor="bottom"
                         )
 
                     if person_name or person_post:
                         header_lines = []
-                        if person_name:
-                            header_lines.append(f"<span style='font-size: 32px;'><b>{person_name}</b></span>")
-                        if person_post:
-                            header_lines.append(f"<span style='font-size: 24px; color: #334155;'>{person_post}</span>")
+                        if person_name: header_lines.append(f"<span style='font-size: 32px;'><b>{person_name}</b></span>")
+                        if person_post: header_lines.append(f"<span style='font-size: 24px; color: #334155;'>{person_post}</span>")
                         
                         fig.add_annotation(
-                            xref="paper", yref="paper",
-                            x=0.01, y=0.99,
-                            text="<br>".join(header_lines),
-                            showarrow=False,
-                            align="left",
-                            xanchor="left", yanchor="top",
-                            font=dict(family="Arial Black")
+                            xref="paper", yref="paper", x=0.01, y=0.99,
+                            text="<br>".join(header_lines), showarrow=False,
+                            align="left", xanchor="left", yanchor="top", font=dict(family="Arial Black")
                         )
 
                     yaxis_dict = dict(
@@ -436,10 +425,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         tickfont=dict(color="#000000", size=18, family="Arial Black"),
                         showline=True, linecolor="#000000", linewidth=3
                     )
-                    if is_stat_inverted_check:
-                        yaxis_dict["autorange"] = "reversed"
-                    else:
-                        yaxis_dict["rangemode"] = "tozero"
+                    if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
+                    else: yaxis_dict["rangemode"] = "tozero"
 
                     layout_args = dict(
                         title=dict(
@@ -541,8 +528,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
 elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
     st.title("📋 Teljesítménymérő Statisztikák Dashboard")
     
-    # Részleg / Csoport szűrő
-    all_groups = list(set([db["stats"][s].get("group", "Egyéb") for s in stat_names]))
+    all_groups = db.get("groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"])
     selected_group_filter = st.selectbox("Szűrés csoport / részleg szerint:", ["Összes csoport"] + all_groups)
     
     col_search, _ = st.columns([4, 1])
@@ -552,10 +538,8 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
     filtered_stats = []
     for s in stat_names:
         s_group = db["stats"][s].get("group", "Egyéb")
-        if selected_group_filter != "Összes csoport" and s_group != selected_group_filter:
-            continue
-        if search_query and search_query.lower() not in s.lower():
-            continue
+        if selected_group_filter != "Összes csoport" and s_group != selected_group_filter: continue
+        if search_query and search_query.lower() not in s.lower(): continue
         filtered_stats.append(s)
 
     if not filtered_stats:
@@ -577,12 +561,20 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     p_post = s_settings.get("person_post", "")
                     assigned_str = f"{p_name} ({p_post})" if p_name or p_post else "Nincs megadva"
                     
-                    # Állapot kiszámítása
-                    condition_text, condition_color = calculate_stat_condition(s_data_raw)
+                    # Cél kiszámítása a kártyához
+                    card_goal_type = s_settings.get("goal_type", "Nincs")
+                    card_goal_val = s_settings.get("goal_value", 0.0)
+                    card_ref = 0.0
+                    card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
+                    card_y = [item[1] for item in card_items] if card_items else []
+                    
+                    if card_goal_type == "Fix érték (db/Ft)": card_ref = card_goal_val
+                    elif card_goal_type == "Százalékos növekedés (%)" and card_y: card_ref = card_y[-1] * (1 + card_goal_val / 100)
+                    
+                    condition_text, condition_color = calculate_stat_condition(s_data_raw, card_ref)
                     
                     with cols[j]:
                         with st.container(border=True):
-                            # Fejléc és Állapot badge
                             h_col1, h_col2 = st.columns([3, 1])
                             with h_col1:
                                 st.markdown(f"### **{s_name}**")
@@ -595,27 +587,28 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                             min_d = min(dates_parsed) if dates_parsed else None
                             max_d = max(dates_parsed) if dates_parsed else None
                             
-                            card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
-                            
                             if card_items:
                                 fig_card = go.Figure()
                                 x_num = list(range(len(card_items)))
-                                y_v = [item[1] for item in card_items]
                                 c_notes = [item[2] if len(item) > 2 else "" for item in card_items]
                                 
                                 for k in range(len(card_items) - 1):
-                                    x1, y1 = x_num[k], y_v[k]
-                                    x2, y2 = x_num[k+1], y_v[k+1]
+                                    x1, y1 = x_num[k], card_y[k]
+                                    x2, y2 = x_num[k+1], card_y[k+1]
                                     color = "#00C853" if (y2 <= y1 if s_inverted else y2 >= y1) else "#FF1744"
                                     fig_card.add_trace(go.Scatter(x=[x1, x2], y=[y1, y2], mode='lines', line=dict(color=color, width=3.5), showlegend=False, hoverinfo='skip'))
                                 
-                                formatted_t = [f"{int(y):,} {s_unit}".replace(",", " ") if float(y).is_integer() else f"{y} {s_unit}" for y in y_v]
+                                # Célvonal a kártyán is
+                                if card_ref > 0:
+                                    fig_card.add_hline(y=card_ref, line_dash="dash", line_color="#EF4444", line_width=2)
+
+                                formatted_t = [f"{int(y):,} {s_unit}".replace(",", " ") if float(y).is_integer() else f"{y} {s_unit}" for y in card_y]
                                 x_fmt = [datetime.strptime(str(item[0]), "%Y-%m-%d").strftime("%b %d") for item in card_items]
                                 hover_c = [f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}" if n else f"Dátum: {dt}<br>Érték: {txt}" for dt, txt, n in zip(x_fmt, formatted_t, c_notes)]
 
-                                fig_card.add_trace(go.Scatter(x=x_num, y=y_v, mode='markers', marker=dict(size=8, color="#1E293B"), hovertext=hover_c, hoverinfo='text', showlegend=False))
+                                fig_card.add_trace(go.Scatter(x=x_num, y=card_y, mode='markers', marker=dict(size=8, color="#1E293B"), hovertext=hover_c, hoverinfo='text', showlegend=False))
                                 
-                                for x_val, y_val, txt in zip(x_num, y_v, formatted_t):
+                                for x_val, y_val, txt in zip(x_num, card_y, formatted_t):
                                     fig_card.add_annotation(x=x_val, y=y_val, text=txt, showarrow=False, yshift=10, textangle=-90, font=dict(size=10, color="#000000", family="Arial Black"), xanchor="center", yanchor="bottom")
                                 
                                 yaxis_card = dict(showgrid=True, gridcolor="#F1F5F9", gridwidth=1.5, tickfont=dict(color="#000", size=11, family="Arial Black"), showline=True, linecolor="#000", linewidth=1.5)
@@ -623,7 +616,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                 else: yaxis_card["rangemode"] = "tozero"
                                 
                                 fig_card.update_layout(
-                                    height=320, plot_bgcolor="white", paper_bgcolor="white",
+                                    height=300, plot_bgcolor="white", paper_bgcolor="white",
                                     margin=dict(t=10, b=40, l=40, r=20),
                                     xaxis=dict(tickmode="array", tickvals=x_num, ticktext=x_fmt, tickangle=-45, showgrid=True, gridcolor="#F1F5F9", gridwidth=1.5, tickfont=dict(color="#000", size=10, family="Arial Black"), showline=True, linecolor="#000", linewidth=1.5),
                                     yaxis=yaxis_card
@@ -664,15 +657,17 @@ elif selected_menu == "📖 Eseménynapló":
     else:
         st.info("Még nincsenek rögzített események vagy megjegyzések a statisztikákhoz.")
 
-# 5. ÚJ STATISZTIKA LÉTREHOZÁSA (CSOPORT VÁLASZTÁSSAL)
+# 5. ÚJ STATISZTIKA LÉTREHOZÁSA
 elif selected_menu == "➕ Új Statisztika Létrehozása":
     st.title("➕ Új Statisztika Kategória Létrehozása")
     st.write("Itt hozhatsz létre új adatsort és sorolhatod be a megfelelő részlegbe.")
     
+    groups_list = db.get("groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"])
+    
     with st.form("create_stat_form"):
         new_stat_name = st.text_input("Statisztika neve:", placeholder="pl. Új Eladások")
         new_stat_unit = st.text_input("Mértékegység:", placeholder="pl. Ft, db, fő")
-        new_stat_group = st.text_input("Csoport / Részleg:", placeholder="pl. Pénzügy, Értékesítés, Marketing")
+        new_stat_group = st.selectbox("Csoport / Részleg:", options=groups_list)
         is_new_inverted = st.checkbox("Fordított statisztika (a 0 felül van és lefelé nő)")
         
         submit = st.form_submit_button("Létrehozás")
@@ -681,7 +676,7 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
                 if new_stat_name not in db["stats"]:
                     db["stats"][new_stat_name] = {
                         "unit": new_stat_unit, 
-                        "group": new_stat_group if new_stat_group else "Egyéb",
+                        "group": new_stat_group,
                         "inverted": is_new_inverted, 
                         "data": []
                     }
@@ -692,14 +687,32 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
             else:
                 st.warning("Adj meg egy nevet!")
 
-# 6. ADMINISZTRÁCIÓ & ARCHÍVUM (CSOPORT JOGOSULTSÁGOKKAL)
+# 6. ADMINISZTRÁCIÓ & ARCHÍVUM
 elif selected_menu == "⚙️ Adminisztráció & Archívum" and is_admin:
     st.title("⚙️ Rendszer Adminisztráció")
     
-    st.subheader("👥 Felhasználók & Csoport Jogosultságok Kezelése")
+    # Külön szekció a Csoportok / Részlegek kezelésére
+    st.subheader("📁 Csoportok / Részlegek Kezelése")
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        new_group_name = st.text_input("Új részleg / csoport neve:")
+        if st.button("➕ Részleg Hozzáadása"):
+            if new_group_name and new_group_name not in db["groups"]:
+                db["groups"].append(new_group_name)
+                save_data(db)
+                st.success(f"'{new_group_name}' sikeresen létrehozva!")
+                st.rerun()
+            else:
+                st.warning("Add meg a nevet vagy már létezik ilyen részleg!")
+    with col_g2:
+        st.markdown("#### Meglévő részlegek listája:")
+        st.write(", ".join(db.get("groups", [])))
+
+    st.markdown("---")
+    st.subheader("👥 Felhasználók & Jogosultságok Kezelése")
     col1, col2 = st.columns(2)
     
-    all_groups_list = list(set([db["stats"][s].get("group", "Egyéb") for s in all_stat_names]))
+    all_groups_list = db.get("groups", [])
     
     with col1:
         st.markdown("#### Új felhasználó hozzáadása")
@@ -710,7 +723,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum" and is_admin:
         assigned_groups = [] if is_admin_check else st.multiselect("Elérhető csoportok / részlegek:", options=all_groups_list)
         assigned_stats = [] if is_admin_check else st.multiselect("Egyedi statisztika engedélyek:", options=all_stat_names)
         
-        if st.button("Létrehozás"):
+        if st.button("Felhasználó Létrehozása"):
             if new_u_name and new_u_pass:
                 USERS[new_u_name] = {
                     "password": new_u_pass, 
