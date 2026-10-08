@@ -30,6 +30,17 @@ st.markdown("""
 DB_FILE = "statisztikak.json"
 ARCHIVE_FILE = "archivum.json"
 
+def fmt_num(val, unit=""):
+    if val is None:
+        return ""
+    if float(val).is_integer():
+        s = f"{int(val):,}".replace(",", ".")
+    else:
+        s = f"{val}".replace(",", ".")
+    if unit:
+        return f"{s}.{unit}."
+    return s
+
 def load_data():
     if os.path.exists(DB_FILE):
         try:
@@ -314,14 +325,14 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line_width=4
                         )
 
-                    # Címkék előkészítése: Az adott érték van felül, alatta a kumulatív zárójelben
+                    # Címkék előkészítése az új pontozott formátummal
                     formatted_texts = []
                     for idx, val in enumerate(y_vals):
-                        v_str = f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}"
+                        v_str = fmt_num(val, current_unit)
                         if show_acc_in_brackets and accumulated_vals:
                             acc_val = accumulated_vals[idx]
-                            acc_str = f"{int(acc_val):,}".replace(",", " ") if float(acc_val).is_integer() else f"{acc_val}"
-                            formatted_texts.append(f"{v_str}<br><span style='font-size:13px; color:#475569;'>({acc_str} {current_unit})</span>")
+                            acc_str = fmt_num(acc_val, current_unit)
+                            formatted_texts.append(f"{v_str}<br><span style='font-size:13px; color:#475569;'>({acc_str})</span>")
                         else:
                             formatted_texts.append(v_str)
 
@@ -330,9 +341,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     hover_texts = []
                     for dt, val, acc, n in zip(x_formatted, y_vals, accumulated_vals, notes):
-                        v_str = f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}"
-                        acc_str = f"{int(acc):,}".replace(",", " ") if float(acc).is_integer() else f"{acc}"
-                        h_txt = f"Dátum: {dt}<br>Érték: {v_str}<br>Akkumulált: {acc_str} {current_unit}"
+                        v_str = fmt_num(val, current_unit)
+                        acc_str = fmt_num(acc, current_unit)
+                        h_txt = f"Dátum: {dt}<br>Érték: {v_str}<br>Akkumulált: {acc_str}"
                         if n: h_txt += f"<br>Megjegyzés: {n}"
                         hover_texts.append(h_txt)
 
@@ -342,7 +353,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
-                    # Értékek feliratozása (-75 fokos szögben, picit jobbra tolva xshift=18-cal)
+                    # Értékek feliratozása (-75 fokos szögben, xshift=18)
                     for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
                         fig.add_annotation(
                             x=x_val, y=y_val, text=txt, showarrow=False, yshift=12, xshift=18, textangle=-75,
@@ -364,10 +375,10 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     # Cél kiírása a jobb felső sarokba
                     if goal_type != "Nincs" and calc_goal_val > 0:
-                        goal_fmt = f"{int(calc_goal_val):,}".replace(",", " ") if float(calc_goal_val).is_integer() else f"{calc_goal_val}"
+                        goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
                             xref="paper", yref="paper", x=1.0, y=1.12,
-                            text=f"🎯 Cél: {goal_fmt} {current_unit}",
+                            text=f"🎯 Cél: {goal_fmt}",
                             showarrow=False,
                             align="right", xanchor="right", yanchor="bottom",
                             font=dict(size=20, color="#2563EB", family="Arial Black")
@@ -456,7 +467,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
                 orig_dates = [dt.strftime("%Y.%m.%d.") if isinstance(dt, (pd.Timestamp, datetime)) else str(dt) for dt, _ in items]
                 
                 x_idx_current = list(range(1, len(y_vals) + 1))
-                formatted_texts = [f"{int(y):,} {s_unit}".replace(",", " ") if float(y).is_integer() else f"{y} {s_unit}" for y in y_vals]
+                formatted_texts = [fmt_num(y, s_unit) for y in y_vals]
                 trace_color = color_palette[idx % len(color_palette)]
                 
                 fig.add_trace(go.Scatter(
@@ -564,7 +575,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                 if card_surv_val > 0:
                                     fig_card.add_hline(y=card_surv_val, line_dash="dash", line_color="#4B5563", line_width=2)
 
-                                formatted_t = [f"{int(y):,} {s_unit}".replace(",", " ") if float(y).is_integer() else f"{y} {s_unit}" for y in card_y]
+                                formatted_t = [fmt_num(y, s_unit) for y in card_y]
                                 x_fmt = [datetime.strptime(str(item[0]), "%Y-%m-%d").strftime("%b %d") for item in card_items]
                                 hover_c = [f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}" if n else f"Dátum: {dt}<br>Érték: {txt}" for dt, txt, n in zip(x_fmt, formatted_t, c_notes)]
 
@@ -610,7 +621,7 @@ elif selected_menu == "📖 Eseménynapló":
                 all_events.append({
                     "date": item[0],
                     "stat": s_name,
-                    "value": f"{item[1]} {s_unit}",
+                    "value": fmt_num(item[1], s_unit),
                     "note": item[2]
                 })
     
