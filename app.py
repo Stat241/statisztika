@@ -342,17 +342,17 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
-                    # Értékek feliratozása FÜGGŐLEGESEN (textangle=-90)
+                    # Értékek feliratozása enyhén elforgatva (-75 fok)
                     for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
                         if idx == 0:
                             fig.add_annotation(
-                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, xshift=14, textangle=-90,
+                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, xshift=14, textangle=-75,
                                 font=dict(size=14, color="#000000", family="Arial Black"),
                                 xanchor="left", yanchor="bottom"
                             )
                         else:
                             fig.add_annotation(
-                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, textangle=-90,
+                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, textangle=-75,
                                 font=dict(size=14, color="#000000", family="Arial Black"),
                                 xanchor="center", yanchor="bottom"
                             )
@@ -401,7 +401,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         margin=dict(t=180, b=160, l=80, r=80),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
-                            tickmode="array", tickvals=x_numeric, ticktext=x_formatted, tickangle=-30,  # Dátumok picit ferdén (-30 fok)
+                            tickmode="array", tickvals=x_numeric, ticktext=x_formatted, tickangle=-30,
                             showgrid=True, gridcolor="#F1F5F9", gridwidth=3,
                             tickfont=dict(color="#000000", size=15, family="Arial Black"),
                             showline=True, linecolor="#000000", linewidth=3.5,
@@ -476,7 +476,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
                 for x_val, y_val, txt, d_str in zip(x_idx_current, y_vals, formatted_texts, orig_dates):
                     annotation_text = f"{txt}<br>({d_str})" if show_dates_on_chart else txt
                     fig.add_annotation(
-                        x=x_val, y=y_val, text=annotation_text, showarrow=False, yshift=15, textangle=-90, 
+                        x=x_val, y=y_val, text=annotation_text, showarrow=False, yshift=15, textangle=-75, 
                         font=dict(size=11, color=trace_color, family="Arial Black"), 
                         xanchor="center", yanchor="bottom"
                     )
@@ -579,7 +579,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                 
                                 for x_val, y_val, txt in zip(x_num, card_y, formatted_t):
                                     fig_card.add_annotation(
-                                        x=x_val, y=y_val, text=txt, showarrow=False, yshift=10, textangle=-90,
+                                        x=x_val, y=y_val, text=txt, showarrow=False, yshift=10, textangle=-75,
                                         font=dict(size=9, color="#000000", family="Arial Black"), xanchor="center", yanchor="bottom"
                                     )
                                 
