@@ -40,30 +40,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ================= ADATTÁROLÁS & FÜGGVÉNYEK =================
-USERS_FILE = "users.json"
 DB_FILE = "statisztikak.json"
 ARCHIVE_FILE = "archivum.json"
-
-def load_users():
-    users = {}
-    if os.path.exists(USERS_FILE):
-        try:
-            with open(USERS_FILE, "r", encoding="utf-8") as f:
-                users = json.load(f)
-        except Exception:
-            pass
-            
-    users["teszt"] = {
-        "password": "123",
-        "allowed_stats": ["*"],
-        "allowed_groups": ["*"]
-    }
-    save_users(users)
-    return users
-
-def save_users(users_data):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users_data, f, ensure_ascii=False, indent=2)
 
 def load_data():
     if os.path.exists(DB_FILE):
@@ -151,80 +129,31 @@ def calculate_stat_condition(data, ref_val=0):
         return "Bőség / Normál", "green"
 
 # ================= SESSION STATE =================
-if "users" not in st.session_state: st.session_state.users = load_users()
 if "db" not in st.session_state: st.session_state.db = load_data()
-if "authenticated" not in st.session_state: st.session_state.authenticated = False
-if "current_user" not in st.session_state: st.session_state.current_user = None
-
-USERS = load_users()
 db = st.session_state.db
 
 if "groups" not in db:
     db["groups"] = ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
     save_data(db)
 
-# ================= BEJELENTKEZÉS =================
-def check_login():
-    st.markdown("<h2 style='text-align: center;'>🔐 Bejelentkezés a Statisztika Rendszerbe</h2>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        with st.form("login_form"):
-            username = st.text_input("Felhasználónév:")
-            password = st.text_input("Jelszó:", type="password")
-            submit_button = st.form_submit_button("Belépés")
-            
-            if submit_button:
-                current_users_db = load_users()
-                if username in current_users_db and current_users_db[username]["password"] == password:
-                    st.session_state.authenticated = True
-                    st.session_state.current_user = username
-                    st.success(f"Sikeres belépés, üdvözlünk {username}!")
-                    st.rerun()
-                else:
-                    st.error("❌ Hibás felhasználónév vagy jelszó!")
-
-if not st.session_state.authenticated:
-    check_login()
-    st.stop()
-
-current_user_info = USERS.get(st.session_state.current_user, {"allowed_stats": [], "allowed_groups": []})
-allowed_stat_names = current_user_info["allowed_stats"]
-allowed_groups = current_user_info["allowed_groups"]
-
 all_stat_names = list(db["stats"].keys())
-is_admin = "*" in allowed_stat_names or "*" in allowed_groups
-
-if is_admin:
-    stat_names = all_stat_names
-else:
-    stat_names = []
-    for s in all_stat_names:
-        s_group = db["stats"][s].get("group", "Egyéb")
-        if s in allowed_stat_names or s_group in allowed_groups:
-            stat_names.append(s)
+stat_names = all_stat_names
+is_admin = True  # Közvetlen admin hozzáférés
 
 # ================= NAVIGÁCIÓ =================
 st.sidebar.title("📌 Navigáció")
-st.sidebar.info(f"Bejelentkezve: **{st.session_state.current_user}**")
+st.sidebar.info("Rendszer: **Admin Mód**")
 
 menu_options = [
     "📊 Egyedi Statisztika Nézet", 
     "📈 Több Statisztika Összevetése", 
     "📋 Összesítő Dashboard (Kártya Nézet)",
     "📖 Eseménynapló",
-    "➕ Új Statisztika Létrehozása"
+    "➕ Új Statisztika Létrehozása",
+    "⚙️ Adminisztráció & Archívum"
 ]
-if is_admin:
-    menu_options.append("⚙️ Adminisztráció & Archívum")
 
 selected_menu = st.sidebar.radio("Válassz funkciót:", menu_options)
-st.sidebar.markdown("---")
-
-if st.sidebar.button("🚪 Kijelentkezés"):
-    st.session_state.authenticated = False
-    st.session_state.current_user = None
-    st.rerun()
-
 st.sidebar.markdown("---")
 
 # ================= MODULOK =================
@@ -321,7 +250,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 ">🖨️ Nyomtatás A4-re</button>
             """, height=50)
 
-            # Értékek előkészítése
             raw_items = sorted(stat_data_raw, key=lambda x: str(x[0])) if stat_data_raw else []
             y_vals_temp = [item[1] for item in raw_items] if raw_items else []
             calculated_ref_val = 0.0
@@ -361,7 +289,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line=dict(color=color, width=6), showlegend=False, hoverinfo='skip'
                         ))
 
-                    # Életvonal rajzolása a grafikonra
                     if show_ref_line and goal_type != "Nincs" and calculated_ref_val > 0:
                         val_str = f"{int(calculated_ref_val):,}".replace(",", " ") if float(calculated_ref_val).is_integer() else f"{calculated_ref_val}"
                         fig.add_hline(
@@ -442,7 +369,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     fig.update_layout(**layout_args)
                     st.plotly_chart(fig, use_container_width=False)
 
-            # Célkitűzés doboz a grafikon alatt
             if goal_type != "Nincs" and calculated_ref_val > 0:
                 val_fmt = f"{int(calculated_ref_val):,}".replace(",", " ") if float(calculated_ref_val).is_integer() else f"{calculated_ref_val}"
                 st.markdown(f"""
@@ -592,7 +518,6 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                     color = "#00C853" if (y2 <= y1 if s_inverted else y2 >= y1) else "#FF1744"
                                     fig_card.add_trace(go.Scatter(x=[x1, x2], y=[y1, y2], mode='lines', line=dict(color=color, width=3.5), showlegend=False, hoverinfo='skip'))
                                 
-                                # Életvonal a kártyán is
                                 if card_ref > 0:
                                     fig_card.add_hline(y=card_ref, line_dash="dash", line_color="#EF4444", line_width=2)
 
@@ -682,10 +607,9 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
                 st.warning("Adj meg egy nevet!")
 
 # 6. ADMINISZTRÁCIÓ & ARCHÍVUM
-elif selected_menu == "⚙️ Adminisztráció & Archívum" and is_admin:
+elif selected_menu == "⚙️ Adminisztráció & Archívum":
     st.title("⚙️ Rendszer Adminisztráció")
     
-    # Csoportok / Részlegek Kezelése (Létrehozás és Törlés)
     st.subheader("📁 Csoportok / Részlegek Kezelése")
     col_g1, col_g2 = st.columns(2)
     with col_g1:
@@ -706,67 +630,12 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum" and is_admin:
         if st.button("🗑️ Részleg Törlése") and group_to_delete:
             if group_to_delete in db["groups"]:
                 db["groups"].remove(group_to_delete)
-                # Opcionálisan átrakhatjuk a hozzá tartozó statisztikákat az "Egyéb"-be
                 for s_key in db["stats"]:
                     if db["stats"][s_key].get("group") == group_to_delete:
                         db["stats"][s_key]["group"] = "Egyéb"
                 save_data(db)
                 st.success(f"'{group_to_delete}' részleg törölve!")
                 st.rerun()
-
-    st.markdown("---")
-    st.subheader("👥 Felhasználók & Jogosultságok Kezelése")
-    col1, col2 = st.columns(2)
-    
-    all_groups_list = db.get("groups", [])
-    
-    with col1:
-        st.markdown("#### Új felhasználó hozzáadása")
-        new_u_name = st.text_input("Felhasználónév:")
-        new_u_pass = st.text_input("Jelszó:", type="password")
-        is_admin_check = st.checkbox("Teljes admin jog (*)", key="new_adm_check")
-        
-        assigned_groups = [] if is_admin_check else st.multiselect("Elérhető csoportok / részlegek:", options=all_groups_list)
-        assigned_stats = [] if is_admin_check else st.multiselect("Egyedi statisztika engedélyek:", options=all_stat_names)
-        
-        if st.button("Felhasználó Létrehozása"):
-            if new_u_name and new_u_pass:
-                USERS[new_u_name] = {
-                    "password": new_u_pass, 
-                    "allowed_stats": ["*"] if is_admin_check else assigned_stats,
-                    "allowed_groups": ["*"] if is_admin_check else assigned_groups
-                }
-                save_users(USERS)
-                st.success(f"Felhasználó '{new_u_name}' létrehozva!")
-                st.rerun()
-
-    with col2:
-        st.markdown("#### Felhasználók módosítása / törlése")
-        edit_user = st.selectbox("Módosítandó felhasználó:", options=list(USERS.keys()))
-        if edit_user:
-            u_data = USERS[edit_user]
-            is_currently_admin = "*" in u_data.get("allowed_stats", []) or "*" in u_data.get("allowed_groups", [])
-            edit_is_admin = st.checkbox("Admin jog", value=is_currently_admin, key="e_adm")
-            
-            edit_groups = st.multiselect("Csoport jogosultságok:", options=all_groups_list, default=[] if edit_is_admin else u_data.get("allowed_groups", []), key="e_gr")
-            edit_stats = st.multiselect("Egyedi statisztikák:", options=all_stat_names, default=[] if edit_is_admin else [s for s in u_data.get("allowed_stats", []) if s in all_stat_names], key="e_stat")
-            edit_pass = st.text_input("Új jelszó (ha módosítod):", type="password", key="e_pass")
-            
-            c_m1, c_m2 = st.columns(2)
-            with c_m1:
-                if st.button("Mentés Módosításai"):
-                    USERS[edit_user]["allowed_stats"] = ["*"] if edit_is_admin else edit_stats
-                    USERS[edit_user]["allowed_groups"] = ["*"] if edit_is_admin else edit_groups
-                    if edit_pass.strip(): USERS[edit_user]["password"] = edit_pass
-                    save_users(USERS)
-                    st.success("Módosítva!")
-                    st.rerun()
-            with c_m2:
-                if edit_user != st.session_state.current_user and st.button("Törlés"):
-                    del USERS[edit_user]
-                    save_users(USERS)
-                    st.success("Törölve!")
-                    st.rerun()
 
     st.markdown("---")
     st.subheader("📂 Archívum kezelése")
