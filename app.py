@@ -47,27 +47,6 @@ def fmt_num(val, unit=""):
         return f"{s}.{clean_unit}."
     return s
 
-def normalize_entry(item):
-    if not item or len(item) < 2:
-        return None
-    d_val = str(item[0]).strip()
-    try:
-        v_val = float(item[1])
-        if v_val.is_integer():
-            v_val = int(v_val)
-    except (ValueError, TypeError):
-        v_val = 0
-    n_val = str(item[2]).strip() if len(item) > 2 and item[2] is not None and str(item[2]) != "nan" else ""
-    return [d_val, v_val, n_val]
-
-def normalize_list(lst):
-    res = []
-    for it in lst:
-        norm = normalize_entry(it)
-        if norm:
-            res.append(norm)
-    return res
-
 def load_data():
     if os.path.exists(DB_FILE):
         try:
@@ -283,43 +262,68 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 input_val = st.number_input(f"Érték ({current_unit})", min_value=0.0, step=1.0)
                 input_note = st.text_input("Megjegyzés / Esemény ehhez a ponthoz:")
                 if st.form_submit_button("Adat Hozzáadása"):
-                    full_dt_str = datetime.combine(input_date, input_time).strftime("%Y-%m-%d %H:%M")
+                    full_dt_str = f"{input_date.strftime('%Y-%m-%d')} {input_time.strftime('%H:%M')}"
                     db["stats"][selected_stat]["data"].append([full_dt_str, input_val, input_note])
                     save_data(db)
                     st.rerun()
 
             st.markdown("---")
-            st.subheader("📋 Adat-táblázat (Dupla kattintással közvetlenül szerkeszthető)")
-            st.caption("💡 Megjegyzés: Dupla kattintással átírhatsz bármilyen értéket vagy dátumot.")
+            st.subheader("📋 Adat-táblázat (Dupla kattintással szerkeszthető)")
+            st.caption("💡 Megjegyzés: A Dátum és az Időpont külön oszlopban található, így nem csúszik el az időzóna miatt.")
             
             stat_data_raw = db["stats"][selected_stat]["data"]
             
             if stat_data_raw:
-                df_raw = pd.DataFrame(stat_data_raw, columns=["Dátum / Időpont", f"Érték ({current_unit})", "Megjegyzés"])
-                df_raw["Dátum / Időpont"] = df_raw["Dátum / Időpont"].astype(str)
+                # Előkészítjük az adatokat külön Dátum és Időpont oszlopra
+                table_rows = []
+                for item in stat_data_raw:
+                    dt_str = str(item[0]).strip()
+                    parts = dt_str.split()
+                    d_part = parts[0] if len(parts) > 0 else ""
+                    t_part = parts[1] if len(parts) > 1 else "00:00"
+                    
+                    try:
+                        v_part = float(item[1])
+                        if v_part.is_integer():
+                            v_part = int(v_part)
+                    except (ValueError, TypeError):
+                        v_part = 0
+                        
+                    n_part = str(item[2]).strip() if len(item) > 2 and item[2] is not None and str(item[2]) != "nan" else ""
+                    table_rows.append([d_part, t_part, v_part, n_part])
+
+                df_raw = pd.DataFrame(table_rows, columns=["Dátum", "Időpont", f"Érték ({current_unit})", "Megjegyzés"])
                 
                 edited_df = st.data_editor(
                     df_raw,
                     num_rows="dynamic",
                     use_container_width=True,
                     column_config={
-                        "Dátum / Időpont": st.column_config.TextColumn("Dátum / Időpont", help="Formátum: ÉÉÉÉ-HH-NN ÓÓ:PP")
+                        "Dátum": st.column_config.TextColumn("Dátum (ÉÉÉÉ-HH-NN)", help="pl. 2026-10-06"),
+                        "Időpont": st.column_config.TextColumn("Időpont (ÓÓ:PP)", help="pl. 13:28"),
                     },
                     key=f"editor_{selected_stat}"
                 )
                 
-                raw_edited = []
+                # Összegyűjtjük a módosított értékeket
+                updated_data = []
                 for _, row in edited_df.iterrows():
-                    d = row["Dátum / Időpont"]
-                    v = row[f"Érték ({current_unit})"]
-                    n = row["Megjegyzés"]
-                    raw_edited.append([d, v, n])
+                    d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
+                    t_val = str(row["Időpont"]).strip() if pd.notnull(row["Időpont"]) else "00:00"
+                    if not t_val or t_val == "nan": t_val = "00:00"
                     
-                updated_normalized = normalize_list(raw_edited)
-                existing_normalized = normalize_list(stat_data_raw)
+                    if d_val and d_val != "nan":
+                        full_dt = f"{d_val} {t_val}".strip()
+                        try:
+                            v_val = float(row[f"Érték ({current_unit})"]) if pd.notnull(row[f"Érték ({current_unit})"]) else 0.0
+                            if v_val.is_integer(): v_val = int(v_val)
+                        except (ValueError, TypeError):
+                            v_val = 0
+                        n_val = str(row["Megjegyzés"]).strip() if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan" else ""
+                        updated_data.append([full_dt, v_val, n_val])
                 
-                if updated_normalized != existing_normalized:
-                    db["stats"][selected_stat]["data"] = updated_normalized
+                if updated_data != stat_data_raw:
+                    db["stats"][selected_stat]["data"] = updated_data
                     save_data(db)
                     st.rerun()
             else:
@@ -392,7 +396,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     unique_labels = [item["label"] for item in raw_items]
 
                 else:
-                    # NAPI ADATOK (Sima napok összeadva, Csütörtökön 14:00 előtti és utáni külön pont egy függőleges vonalon)
+                    # NAPI ADATOK (Sima napok összeadva, Csütörtökön 14:00 előtti és utáni külön pont EGYETLEN függőleges vonalon)
                     df_temp["Date_Only"] = df_temp["Sort_Key"].dt.strftime("%Y-%m-%d")
                     
                     def get_bucket_type(row):
