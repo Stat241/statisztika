@@ -328,14 +328,14 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line_width=4
                         )
 
-                    # Címkék előkészítése (időszakos érték + opcionálisan alatta zárójelben az akkumulált)
+                    # Címkék előkészítése (időszakos érték + zárójelben feketével az akkumulált)
                     formatted_texts = []
                     for idx, val in enumerate(y_vals):
                         v_str = f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}"
                         if show_acc_in_brackets and accumulated_vals:
                             acc_val = accumulated_vals[idx]
                             acc_str = f"{int(acc_val):,}".replace(",", " ") if float(acc_val).is_integer() else f"{acc_val}"
-                            formatted_texts.append(f"{v_str}<br><span style='font-size:12px; color:#555555;'>({acc_str} {current_unit})</span>")
+                            formatted_texts.append(f"{v_str}<br><span style='font-size:12px; color:#000000;'>({acc_str} {current_unit})</span>")
                         else:
                             formatted_texts.append(v_str)
 
