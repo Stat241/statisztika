@@ -4,16 +4,19 @@ import plotly.graph_objects as go
 import json
 import os
 from datetime import datetime
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Statisztika Kezelő Web", layout="wide")
 
-# ================= NYOMTATÁSI CSS =================
+# ================= NYOMTATÁSI CSS (A4 Fekvő formátumra hangolva) =================
 st.markdown("""
     <style>
     @media print {
+        @page { size: A4 landscape; margin: 10mm; }
         [data-testid="stSidebar"], 
         .stForm, 
         button, 
+        iframe,
         [data-testid="stHeader"] {
             display: none !important;
         }
@@ -29,7 +32,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ================= FELHASZNÁLÓK KEZELÉSE (JSON ALAPÚ) =================
+# ================= FELHASZNÁLÓK KEZELÉSE =================
 USERS_FILE = "users.json"
 
 def load_users():
@@ -85,7 +88,7 @@ if not st.session_state.authenticated:
     check_login()
     st.stop()
 
-# ================= ADATTÁROLÁS ÉS ARCHIVÁLÁS =================
+# ================= ADATTÁROLÁS =================
 DB_FILE = "statisztikak.json"
 ARCHIVE_FILE = "archivum.json"
 
@@ -96,37 +99,7 @@ def load_data():
                 return json.load(f)
         except Exception:
             pass
-    return {
-        "stats": {
-            "Bruttó Beérkezett Bevétel": {
-                "unit": "Ft",
-                "data": [
-                    ["2026-07-23", 650000],
-                    ["2026-07-30", 97500],
-                    ["2026-08-06", 97500],
-                    ["2026-08-13", 547500],
-                    ["2026-08-20", 347500],
-                    ["2026-08-27", 1570799],
-                    ["2026-09-03", 2350000],
-                    ["2026-09-10", 390000],
-                    ["2026-09-17", 4722200],
-                    ["2026-09-24", 0],
-                    ["2026-10-01", 945000]
-                ]
-            },
-            "Ügyfelek száma": {
-                "unit": "fő",
-                "data": [
-                    ["2026-08-08", 5],
-                    ["2026-08-15", 12],
-                    ["2026-08-25", 18],
-                    ["2026-08-30", 25],
-                    ["2026-09-13", 34]
-                ]
-            }
-        },
-        "settings": {}
-    }
+    return {"stats": {}, "settings": {}}
 
 def save_data(db):
     with open(DB_FILE, "w", encoding="utf-8") as f:
@@ -150,13 +123,6 @@ if "db" not in st.session_state:
 
 db = st.session_state.db
 
-if "stats" not in db:
-    old_data = db.get("data", {})
-    db["stats"] = {}
-    for k, v in old_data.items():
-        db["stats"][k] = {"unit": "Ft", "data": v}
-    save_data(db)
-
 USERS = load_users()
 current_user_info = USERS.get(st.session_state.current_user, {"allowed_stats": []})
 allowed_stat_names = current_user_info["allowed_stats"]
@@ -168,7 +134,7 @@ if "*" in allowed_stat_names:
 else:
     stat_names = [s for s in all_stat_names if s in allowed_stat_names]
 
-if not stat_names:
+if not stat_names and not ("*" in allowed_stat_names and st.session_state.current_user == "admin"):
     st.warning("⚠️ Ehhez a felhasználóhoz nincs hozzárendelve látható statisztika.")
     if st.sidebar.button("🚪 Kijelentkezés"):
         st.session_state.authenticated = False
@@ -187,138 +153,65 @@ if st.sidebar.button("🚪 Kijelentkezés"):
 
 st.sidebar.markdown("---")
 
-# --- ADMIN FELÜLET ---
-if "*" in allowed_stat_names:
-    with st.sidebar.expander("👥 Felhasználók & Jogosultságok"):
-        st.write("### ➕ Új felhasználó felvétele")
-        new_u_name = st.text_input("Új felhasználónév:", key="new_u_name")
-        new_u_pass = st.text_input("Jelszó:", type="password", key="new_u_pass")
-        
-        available_stats_for_assign = list(db["stats"].keys())
-        is_admin_check = st.checkbox("Teljes admin jog (*)", key="new_u_is_admin")
-        
-        assigned_stats = []
-        if not is_admin_check:
-            assigned_stats = st.multiselect("Elérhető statisztikák:", options=available_stats_for_assign, key="new_u_multiselect")
-        else:
-            assigned_stats = ["*"]
+# Összesítő nézet hozzáadása a listához
+stat_options = ["📋 ÖSSZESÍTŐ NÉZET"] + stat_names
 
-        if st.button("Felhasználó mentése / létrehozása"):
-            if new_u_name and new_u_pass:
-                USERS[new_u_name] = {
-                    "password": new_u_pass,
-                    "allowed_stats": assigned_stats
-                }
-                save_users(USERS)
-                st.success(f"'{new_u_name}' sikeresen létrehozva!")
-                st.rerun()
-            else:
-                st.warning("Add meg a nevet és a jelszót!")
-
-        st.markdown("---")
-        st.write("### ✏ Felhasználó módosítása")
-        edit_user_name = st.selectbox("Válassz szerkesztendő felhasználót:", options=list(USERS.keys()), key="edit_u_select")
-        
-        if edit_user_name:
-            current_u_data = USERS[edit_user_name]
-            is_currently_admin = "*" in current_u_data["allowed_stats"]
-            
-            edit_is_admin = st.checkbox("Teljes admin jog (*)", value=is_currently_admin, key="edit_u_is_admin")
-            default_selected_stats = [] if is_currently_admin else [s for s in current_u_data["allowed_stats"] if s in available_stats_for_assign]
-            edit_assigned_stats = st.multiselect("Elérhető statisztikák:", options=available_stats_for_assign, default=default_selected_stats, key="edit_u_multiselect")
-            edit_new_pass = st.text_input("Új jelszó (ha üresen hagyod, marad a régi):", type="password", key="edit_u_pass")
-
-            if st.button("Módosítások mentése"):
-                if edit_is_admin:
-                    USERS[edit_user_name]["allowed_stats"] = ["*"]
-                else:
-                    USERS[edit_user_name]["allowed_stats"] = edit_assigned_stats
-                
-                if edit_new_pass.strip():
-                    USERS[edit_user_name]["password"] = edit_new_pass
-                    
-                save_users(USERS)
-                st.success(f"'{edit_user_name}' adatai sikeresen frissítve!")
-                st.rerun()
-
-        st.markdown("---")
-        st.write("### 🗑️ Felhasználó törlése")
-        users_to_delete = [u for u in USERS.keys() if u != st.session_state.current_user]
-        if users_to_delete:
-            selected_user_to_del = st.selectbox("Válassz törlendő felhasználót:", options=users_to_delete, key="del_u_select")
-            if st.button("🔴 Felhasználó Törlése"):
-                if selected_user_to_del in USERS:
-                    del USERS[selected_user_to_del]
-                    save_users(USERS)
-                    st.success(f"'{selected_user_to_del}' törölve!")
-                    st.rerun()
-        else:
-            st.info("Nincs más törölhető felhasználó.")
-
-        st.markdown("---")
-
-with st.sidebar.expander("📂 Régi / Archív statisztikák betöltése"):
-    archive_db = load_archive()
-    if "*" in allowed_stat_names:
-        archive_names = list(archive_db.keys())
-    else:
-        archive_names = [s for s in archive_db.keys() if s in allowed_stat_names]
-    
-    if archive_names:
-        selected_archived_stat = st.selectbox("Válassz az archívumból:", options=archive_names, key="archive_selectbox")
-        if st.button("Archivált statisztika átemelése aktívba"):
-            if selected_archived_stat in archive_db:
-                db["stats"][selected_archived_stat] = archive_db[selected_archived_stat]
-                save_data(db)
-                st.success(f"'{selected_archived_stat}' sikeresen visszatöltve!")
-                st.rerun()
-    else:
-        st.info("Még nincsenek elérhető archivált elemek.")
-
-if "selected_stat_override" in st.session_state and st.session_state["selected_stat_override"] in stat_names:
-    default_stat_idx = stat_names.index(st.session_state["selected_stat_override"])
+if "selected_stat_override" in st.session_state and st.session_state["selected_stat_override"] in stat_options:
+    default_stat_idx = stat_options.index(st.session_state["selected_stat_override"])
 else:
     default_stat_idx = 0
 
-selected_stat = st.sidebar.selectbox("Aktív Statisztika Szűrése / Kiválasztása:", stat_names, index=default_stat_idx)
+selected_stat = st.sidebar.selectbox("Aktív Statisztika Szűrése / Kiválasztása:", stat_options, index=default_stat_idx)
 st.session_state["selected_stat_override"] = selected_stat
 
-with st.sidebar.expander("➕ Új statisztika létrehozása"):
-    new_stat_name = st.text_input("Statisztika neve:", placeholder="pl. Ügyfelek száma")
-    new_stat_unit = st.text_input("Mértékegység / Kategória:", placeholder="pl. fő, db, Ft")
-    if st.button("Létrehozás"):
-        if new_stat_name:
-            if new_stat_name not in db["stats"]:
-                db["stats"][new_stat_name] = {"unit": new_stat_unit, "data": []}
-                save_data(db)
-                st.success(f"Létrehozva: {new_stat_name} ({new_stat_unit})")
-                st.rerun()
-            else:
-                st.warning("Ilyen nevű statisztika már létezik!")
+# ================= FŐKÉPERNYŐ =================
 
-st.sidebar.markdown("---")
-if st.sidebar.button("📦 Jelenlegi statisztika archiválása"):
-    archive_db = load_archive()
-    archive_db[selected_stat] = db["stats"][selected_stat]
-    save_archive(archive_db)
-    st.sidebar.success(f"'{selected_stat}' sikeresen archiválva!")
+# 1. ÖSSZESÍTŐ NÉZET
+if selected_stat == "📋 ÖSSZESÍTŐ NÉZET":
+    st.title("📋 Felhasználói Statisztikák Összesítője")
+    st.write("Itt láthatod az összes számodra elérhető statisztika legfrissebb adatait egy helyen.")
+    
+    summary_data = []
+    for s_name in stat_names:
+        s_data = db["stats"][s_name]["data"]
+        s_unit = db["stats"][s_name].get("unit", "")
+        if s_data:
+            # Időrendbe tesszük biztos ami biztos
+            s_data_sorted = sorted(s_data, key=lambda x: str(x[0]))
+            latest_date_str = s_data_sorted[-1][0]
+            latest_val = s_data_sorted[-1][1]
+            total_val = sum([item[1] for item in s_data_sorted])
+            
+            latest_val_fmt = f"{int(latest_val):,} {s_unit}".replace(",", " ") if float(latest_val).is_integer() else f"{latest_val} {s_unit}"
+            total_val_fmt = f"{int(total_val):,} {s_unit}".replace(",", " ") if float(total_val).is_integer() else f"{total_val} {s_unit}"
+            
+            summary_data.append([s_name, latest_date_str, latest_val_fmt, total_val_fmt])
+        else:
+            summary_data.append([s_name, "Nincs adat", "-", "-"])
+            
+    if summary_data:
+        df_summary = pd.DataFrame(summary_data, columns=["Statisztika neve", "Utolsó frissítés", "Legutóbbi érték", "Összesített érték"])
+        st.dataframe(df_summary, use_container_width=True, hide_index=True)
+    else:
+        st.info("Jelenleg nincsenek elérhető statisztikák.")
+        
+    st.stop() # Ne fusson tovább a kód, ha csak az összesítőt nézzük
 
+# 2. EGYEDI STATISZTIKA NÉZETE
 current_unit = db["stats"][selected_stat].get("unit", "")
 stat_settings = db.get("settings", {}).get(selected_stat, {})
 
+# Oldalsáv további beállításai, ha nem összesítőben vagyunk
 period = st.sidebar.radio("Időszak bontás:", ["Napi", "Heti (Cs)", "Havi"], index=1)
 
-# --- AKKUMULÁLT ÉRTÉK BEÁLLÍTÁSOK ---
 st.sidebar.subheader("📈 Akkumulált érték")
 enable_accumulated = st.sidebar.checkbox("Akkumulált érték számítása", value=False)
 accumulated_start_val = 0.0
 if enable_accumulated:
     accumulated_start_val = st.sidebar.number_input("Kezdő érték:", value=0.0, step=1.0)
 
-# --- DÁTUM SZŰRÉS ---
 st.sidebar.subheader("🗓 Dátum szerinti szűrés")
 enable_date_filter = st.sidebar.checkbox("Időszak szűkítése", value=False)
-
 start_date_filter, end_date_filter = None, None
 if enable_date_filter:
     stat_data_raw = db["stats"][selected_stat]["data"]
@@ -330,55 +223,39 @@ if enable_date_filter:
 
 st.sidebar.subheader("📐 Érték Tengely & Vonalak")
 col_min, col_max, col_step = st.sidebar.columns(3)
+with col_min: ymin = st.text_input("Min", value=stat_settings.get("ymin", ""))
+with col_max: ymax = st.text_input("Max", value=stat_settings.get("ymax", ""))
+with col_step: ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
 
-with col_min:
-    ymin = st.text_input("Min", value=stat_settings.get("ymin", ""))
-with col_max:
-    ymax = st.text_input("Max", value=stat_settings.get("ymax", ""))
-with col_step:
-    ystep = st.text_input("Lépés", value=stat_settings.get("ystep", ""))
-
-show_ref_line = st.sidebar.checkbox("Referencia vonal megjelenítése", value=stat_settings.get("show_ref", True))
-ref_line_val = st.sidebar.text_input(
-    "Referencia vonal értéke:", 
-    value=stat_settings.get("ref_line", ""),
-    placeholder="Hagyd üresen az utolsó adathoz"
-)
+show_ref_line = st.sidebar.checkbox("Referencia vonal", value=stat_settings.get("show_ref", True))
+ref_line_val = st.sidebar.text_input("Referencia vonal értéke:", value=stat_settings.get("ref_line", ""))
 
 if st.sidebar.button("💾 Beállítások Mentése"):
-    if "settings" not in db:
-        db["settings"] = {}
+    if "settings" not in db: db["settings"] = {}
     db["settings"][selected_stat] = {
-        "period": period,
-        "ymin": ymin,
-        "ymax": ymax,
-        "ystep": ystep,
-        "show_ref": show_ref_line,
-        "ref_line": ref_line_val
+        "period": period, "ymin": ymin, "ymax": ymax, "ystep": ystep,
+        "show_ref": show_ref_line, "ref_line": ref_line_val
     }
     save_data(db)
     st.sidebar.success("Beállítások elmentve!")
 
-col_left, col_right = st.columns([1, 2])
+col_left, col_right = st.columns([1, 2.5])
 
-# BAL OLDAL: Adatbevitel és Táblázat (Legfrissebb felül)
+# BAL OLDAL: Adatbevitel és Táblázat
 with col_left:
-    st.subheader(f"➕ Új adat hozzáadása ({selected_stat})")
+    st.subheader(f"➕ Új adat")
     with st.form("add_data_form", clear_on_submit=True):
         input_date = st.date_input("Dátum")
         input_val = st.number_input(f"Érték ({current_unit})", min_value=0.0, step=1.0)
-        submit_btn = st.form_submit_button("Adat Hozzáadása")
-
-        if submit_btn:
+        if st.form_submit_button("Hozzáadás"):
             date_str = input_date.strftime("%Y-%m-%d")
             db["stats"][selected_stat]["data"].append([date_str, input_val])
             save_data(db)
             st.success("Adat elmentve!")
             st.rerun()
 
-    st.subheader("📋 Adat-táblázat")
+    st.subheader("📋 Adatok")
     stat_data_list = db["stats"][selected_stat]["data"]
-    
     if stat_data_list:
         filtered_items = []
         for item in stat_data_list:
@@ -392,41 +269,41 @@ with col_left:
         df = pd.DataFrame(filtered_items, columns=["Dátum", f"Érték ({current_unit})"])
         if not df.empty:
             df = df.sort_values(by="Dátum", ascending=False)
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, use_container_width=True, hide_index=False)
+            
+            del_idx = st.number_input("Törlendő sor (index):", min_value=0, max_value=len(df)-1, step=1)
+            if st.button("🔴 Törlés"):
+                target = df.iloc[int(del_idx)].tolist()
+                if target in db["stats"][selected_stat]["data"]:
+                    db["stats"][selected_stat]["data"].remove(target)
+                    save_data(db)
+                    st.rerun()
 
-        delete_idx = st.number_input("Törlendő sor száma (index):", min_value=0, max_value=len(df)-1 if len(df) > 0 else 0, step=1)
-        if st.button("🔴 Sor Törlése") and len(df) > 0:
-            target_to_delete = df.iloc[int(delete_idx)].tolist()
-            if target_to_delete in db["stats"][selected_stat]["data"]:
-                db["stats"][selected_stat]["data"].remove(target_to_delete)
-                save_data(db)
-                st.rerun()
-
-# JOBB OLDAL: Interaktív Grafikon (Folytatólagos dátum, év elöl, helyes olvasási iránnyal)
+# JOBB OLDAL: Interaktív Grafikon
 with col_right:
-    stat_data_list = db["stats"][selected_stat]["data"]
+    # --- NYOMTATÁS GOMB ---
+    components.html("""
+        <button onclick="window.print()" style="
+            padding: 10px 24px; 
+            font-size: 16px; 
+            background-color: #000000; 
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer;
+            font-family: Arial, sans-serif;
+            font-weight: bold;
+            box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
+        ">🖨️ Nyomtatás A4-es papírra</button>
+    """, height=60)
+    
     if stat_data_list:
-        raw_items = []
-        for item in stat_data_list:
-            item_date = datetime.strptime(item[0], "%Y-%m-%d").date()
-            if enable_date_filter and start_date_filter and end_date_filter:
-                if start_date_filter <= item_date <= end_date_filter:
-                    raw_items.append(item)
-            else:
-                raw_items.append(item)
+        raw_items = [item for item in stat_data_list]
+        if enable_date_filter and start_date_filter and end_date_filter:
+            raw_items = [item for item in raw_items if start_date_filter <= datetime.strptime(item[0], "%Y-%m-%d").date() <= end_date_filter]
 
-        # Időrendi sorrend: legrégebbi bal oldalt (növekvő)
         raw_items = sorted(raw_items, key=lambda x: str(x[0]))
         
-        date_range_str = ""
-        if len(raw_items) > 0:
-            try:
-                start_d = datetime.strptime(raw_items[0][0], "%Y-%m-%d").strftime("%Y. %B %d.")
-                end_d = datetime.strptime(raw_items[-1][0], "%Y-%m-%d").strftime("%Y. %B %d.")
-                date_range_str = f"({start_d} - {end_d})"
-            except Exception:
-                date_range_str = f"({raw_items[0][0]} - {raw_items[-1][0]})"
-
         fig = go.Figure()
 
         if len(raw_items) > 0:
@@ -436,133 +313,72 @@ with col_right:
             for i in range(len(raw_items) - 1):
                 x1, y1 = x_numeric[i], y_vals[i]
                 x2, y2 = x_numeric[i+1], y_vals[i+1]
-                
-                color = "#00C853" if y2 > y1 else "#FF1744"
-                
+                color = "#00C853" if y2 >= y1 else "#FF1744"
                 fig.add_trace(go.Scatter(
-                    x=[x1, x2],
-                    y=[y1, y2],
-                    mode='lines',
-                    line=dict(color=color, width=6),
-                    showlegend=False,
-                    hoverinfo='skip'
+                    x=[x1, x2], y=[y1, y2], mode='lines',
+                    line=dict(color=color, width=6), showlegend=False, hoverinfo='skip'
                 ))
 
-            line_target_val = None
             if show_ref_line:
-                if ref_line_val:
-                    try:
-                        line_target_val = float(ref_line_val)
-                    except ValueError:
-                        line_target_val = y_vals[-1]
-                else:
-                    line_target_val = y_vals[-1]
-
-                if line_target_val is not None:
-                    val_str = f"{int(line_target_val):,}".replace(",", " ") if line_target_val.is_integer() else f"{line_target_val}"
-                    formatted_ref_text = f" {val_str} {current_unit}".strip()
-                    fig.add_hline(
-                        y=line_target_val,
-                        line_dash="solid",
-                        line_color="#FF1744",
-                        line_width=6,
-                        annotation_text=formatted_ref_text,
-                        annotation_position="bottom right",
-                        annotation_font=dict(size=21, color="#FF1744", family="Arial Black")
-                    )
+                line_target_val = float(ref_line_val) if ref_line_val else y_vals[-1]
+                val_str = f"{int(line_target_val):,}".replace(",", " ") if float(line_target_val).is_integer() else f"{line_target_val}"
+                fig.add_hline(
+                    y=line_target_val, line_dash="solid", line_color="#FF1744", line_width=6,
+                    annotation_text=f" {val_str} {current_unit}", annotation_position="bottom right",
+                    annotation_font=dict(size=21, color="#FF1744", family="Arial Black")
+                )
 
             formatted_texts = []
             running_acc = accumulated_start_val
             for val in y_vals:
-                v_str = f"{int(val):,}".replace(",", " ") if val.is_integer() else f"{val}"
+                v_str = f"{int(val):,}".replace(",", " ") if float(val).is_integer() else f"{val}"
                 base_text = f"{v_str} {current_unit}".strip()
-                
                 if enable_accumulated:
                     running_acc += val
-                    acc_str = f"{int(running_acc):,}".replace(",", " ") if running_acc.is_integer() else f"{running_acc}"
-                    base_text += f" ({acc_str} {current_unit})".strip()
-                
+                    acc_str = f"{int(running_acc):,}".replace(",", " ") if float(running_acc).is_integer() else f"{running_acc}"
+                    base_text += f" ({acc_str})"
                 formatted_texts.append(base_text)
 
-            hu_months_full = {
-                1: "Január", 2: "Február", 3: "Március", 4: "Április",
-                5: "Május", 6: "Június", 7: "Július", 8: "Augusztus",
-                9: "Szeptember", 10: "Október", 11: "November", 12: "December"
-            }
-            
-            # FOLYTATÓLAGOS FORMÁTUM: Év elöl, utána a hónap és nap egy sorban (pl. 2026. Július 23.)
+            # Számos dátum formátum (pl. 2026. 07. 23.)
             x_dates = [datetime.strptime(str(item[0]), "%Y-%m-%d") for item in raw_items]
-            x_formatted = [f"{d.year}. {hu_months_full[d.month]} {d.day}." for d in x_dates]
+            x_formatted = [f"{d.year}. {d.month:02d}. {d.day:02d}." for d in x_dates]
 
             fig.add_trace(go.Scatter(
-                x=x_numeric,
-                y=y_vals,
-                mode='markers+text',
+                x=x_numeric, y=y_vals, mode='markers+text',
                 marker=dict(size=14, color="#1E293B"),
                 text=formatted_texts,
                 textposition="top center",
-                textfont=dict(size=14, color="#000000", family="Arial Black"),
+                textangle=-90, # Érték szöveg függőlegesen felfelé olvashatóan!
+                textfont=dict(size=15, color="#000000", family="Arial Black"),
                 showlegend=False
             ))
 
             layout_args = dict(
                 title=dict(
-                    text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
-                    x=0.5,
-                    xref="paper",
-                    xanchor='center',
-                    yanchor='top',
-                    font=dict(size=42, color="#000000")
+                    text=f"<b>{selected_stat}</b>",
+                    x=0.5, xref="paper", font=dict(size=36, color="#000000")
                 ),
-                plot_bgcolor="white",
-                paper_bgcolor="white",
-                margin=dict(t=150, b=150, l=80, r=80),
+                plot_bgcolor="white", paper_bgcolor="white",
+                margin=dict(t=120, b=120, l=40, r=40), # Kisebb bal margó, hogy elférjen
                 xaxis=dict(
-                    title=dict(text="", font=dict(color="#000000", size=1)), 
-                    tickmode="array",
-                    tickvals=x_numeric,
-                    ticktext=x_formatted,
-                    tickangle=90,  # 90 fokos elforgatás, hogy az év legyen legfelül és felülről lefele lehessen olvasni
-                    showgrid=True,
-                    gridcolor="#F1F5F9",
-                    gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=15, family="Arial Black"),
-                    showline=True,
-                    linecolor="#000000",
-                    linewidth=3,
-                    range=[-0.5, len(x_numeric) - 0.5]
+                    tickmode="array", tickvals=x_numeric, ticktext=x_formatted,
+                    tickangle=90, showgrid=True, gridcolor="#F1F5F9", gridwidth=2,
+                    tickfont=dict(color="#000000", size=14, family="Arial Black"),
+                    showline=True, linecolor="#000000", linewidth=3,
+                    range=[0, len(x_numeric) - 1] if len(x_numeric) > 1 else [-0.5, 0.5] # Első érték bal oldalt!
                 ),
                 yaxis=dict(
-                    title=dict(text="", font=dict(color="#000000", size=1)), 
-                    showgrid=True,
-                    gridcolor="#F1F5F9",
-                    gridwidth=2.5,
-                    tickfont=dict(color="#000000", size=18, family="Arial Black"),
-                    showline=True,
-                    linecolor="#000000",
-                    linewidth=3
+                    rangemode="tozero", # A nulla teljesen lent kezdődik!
+                    showgrid=True, gridcolor="#F1F5F9", gridwidth=2,
+                    tickfont=dict(color="#000000", size=16, family="Arial Black"),
+                    showline=True, linecolor="#000000", linewidth=3
                 )
             )
 
             try:
-                if ymin and ymax:
-                    layout_args["yaxis"]["range"] = [float(ymin), float(ymax)]
-                if ystep:
-                    layout_args["yaxis"]["dtick"] = float(ystep)
-            except Exception:
-                pass
+                if ymin and ymax: layout_args["yaxis"]["range"] = [float(ymin), float(ymax)]
+                if ystep: layout_args["yaxis"]["dtick"] = float(ystep)
+            except Exception: pass
 
             fig.update_layout(**layout_args)
-
-            config = {
-                'toImageButtonOptions': {
-                    'format': 'png',
-                    'filename': f'{selected_stat}_grafikon',
-                    'height': 1200,
-                    'width': 1800,
-                    'scale': 3
-                },
-                'displayModeBar': True
-            }
-
-            st.plotly_chart(fig, use_container_width=True, config=config)
+            st.plotly_chart(fig, use_container_width=True)
