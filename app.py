@@ -15,31 +15,44 @@ st.markdown("""
     @media print {
         @page { 
             size: A4 landscape; 
-            margin: 10mm; 
+            margin: 0mm; 
         }
         body, html {
             background-color: #ffffff !important;
-            width: 100% !important;
-            height: 100% !important;
+            width: 100vw !important;
+            height: 100vh !important;
             margin: 0 !important;
             padding: 0 !important;
+            overflow: hidden !important;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
-        [data-testid="stSidebar"], 
-        [data-testid="stHeader"],
-        [data-testid="stToolbar"],
-        .stForm, 
-        button, 
-        iframe,
-        .no-print {
-            display: none !important;
+        /* Minden elem elrejtése alapból */
+        body * {
+            visibility: hidden !important;
         }
+        /* Kizárólag a grafikon és annak belső elemei legyenek láthatók */
+        .stPlotlyChart, .stPlotlyChart *, .js-plotly-plot, .js-plotly-plot * {
+            visibility: visible !important;
+        }
+        /* A grafikon kimásolása és teljes képernyős kitöltése a nyomtatási lapon */
         .stPlotlyChart {
-            width: 100% !important;
-            height: 85vh !important;
-            margin: 0 auto !important;
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            margin: 0 !important;
+            padding: 10mm !important;
+            box-sizing: border-box !important;
+            background: #ffffff !important;
+            z-index: 999999 !important;
             page-break-inside: avoid !important;
+            page-break-after: avoid !important;
+        }
+        .js-plotly-plot, .js-plotly-plot .svg-container {
+            width: 100% !important;
+            height: 100% !important;
         }
     }
     </style>
