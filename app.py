@@ -56,17 +56,17 @@ def load_data():
                 "group": "Pénzügy",
                 "inverted": False,
                 "data": [
-                    ["2026-07-23", 650000, "Nyitó kampány"],
-                    ["2026-07-30", 97500, ""],
-                    ["2026-08-06", 97500, ""],
-                    ["2026-08-13", 547500, "Új ügyfél szerződés"],
-                    ["2026-08-20", 347500, ""],
-                    ["2026-08-27", 1570799, "Havi zárás pörgés"],
-                    ["2026-09-03", 2350000, "Prémium csomagok"],
-                    ["2026-09-10", 390000, ""],
-                    ["2026-09-17", 4722200, "Rekord bevétel"],
-                    ["2026-09-24", 0, "Ünnepnap / leállás"],
-                    ["2026-10-01", 945000, ""]
+                    ["2026-07-23 14:00", 650000, "Nyitó kampány"],
+                    ["2026-07-30 14:00", 97500, ""],
+                    ["2026-08-06 14:00", 97500, ""],
+                    ["2026-08-13 14:00", 547500, "Új ügyfél szerződés"],
+                    ["2026-08-20 14:00", 347500, ""],
+                    ["2026-08-27 14:00", 1570799, "Havi zárás pörgés"],
+                    ["2026-09-03 14:00", 2350000, "Prémium csomagok"],
+                    ["2026-09-10 14:00", 390000, ""],
+                    ["2026-09-17 14:00", 4722200, "Rekord bevétel"],
+                    ["2026-09-24 14:00", 0, "Ünnepnap / leállás"],
+                    ["2026-10-01 14:00", 945000, ""]
                 ]
             },
             "Ügyfelek száma": {
@@ -74,11 +74,11 @@ def load_data():
                 "group": "Értékesítés",
                 "inverted": False,
                 "data": [
-                    ["2026-08-08", 5, "Első körös hívások"],
-                    ["2026-08-15", 12, ""],
-                    ["2026-08-25", 18, "Ajánlások"],
-                    ["2026-08-30", 25, ""],
-                    ["2026-09-13", 34, "Marketing akció"]
+                    ["2026-08-08 14:00", 5, "Első körös hívások"],
+                    ["2026-08-15 14:00", 12, ""],
+                    ["2026-08-25 14:00", 18, "Ajánlások"],
+                    ["2026-08-30 14:00", 25, ""],
+                    ["2026-09-13 14:00", 34, "Marketing akció"]
                 ]
             }
         },
@@ -124,6 +124,15 @@ def calculate_stat_condition(data, survival_line=0):
         return "Veszély", "yellow"
     else:
         return "Bőség / Normál", "green"
+
+# Csütörtöki 14:00-ás zárás szerinti heti periodizáció
+def get_thursday_period_end(dt):
+    # Hány nap van hátra a hét csütörtökéig (Hétfő=0, Csütörtök=3)
+    days_to_thu = 3 - dt.weekday()
+    thu_14 = dt.normalize() + pd.Timedelta(days=days_to_thu, hours=14)
+    if dt > thu_14:
+        thu_14 += pd.Timedelta(days=7)
+    return thu_14
 
 # ================= SESSION STATE =================
 if "db" not in st.session_state: st.session_state.db = load_data()
@@ -178,10 +187,10 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
-        # Időszakos összesítés (Napi / Heti Csütörtök / Havi)
+        # Időszakos összesítés (Napi / Heti Csütörtök 14:00 / Havi)
         st.sidebar.markdown("---")
-        st.sidebar.subheader("📅 Időszakos összesítés (Automatikus)")
-        indiv_agg = st.sidebar.selectbox("Grafikon nézet:", ["Napi adatok", "Heti (Csütörtöki zárás)", "Havi összesítés"], key="indiv_agg_view")
+        st.sidebar.subheader("📅 Időszakos összesítés")
+        indiv_agg = st.sidebar.selectbox("Grafikon nézet:", ["Napi adatok", "Heti (Csütörtöki zárás 14:00)", "Havi összesítés"], key="indiv_agg_view")
 
         # Aktuális nézethez tartozó beállítások lekérése
         mode_settings = stat_settings.get(indiv_agg, {})
@@ -222,7 +231,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             db["settings"][selected_stat]["show_acc_in_brackets"] = show_acc_in_brackets
             db["settings"][selected_stat]["initial_accumulated_val"] = initial_accumulated_val
             
-            # Nézetenkénti mentés
             db["settings"][selected_stat][indiv_agg] = {
                 "survival_type": survival_type,
                 "survival_value": survival_value,
@@ -241,11 +249,15 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         with tab_table:
             st.subheader(f"➕ Új adat ({selected_stat})")
             with st.form("add_data_form", clear_on_submit=True):
-                input_date = st.date_input("Dátum")
+                col_d, col_t = st.columns(2)
+                with col_d: input_date = st.date_input("Dátum")
+                with col_t: input_time = st.time_input("Időpont", value=datetime.now().time())
+                
                 input_val = st.number_input(f"Érték ({current_unit})", min_value=0.0, step=1.0)
                 input_note = st.text_input("Megjegyzés / Esemény ehhez a ponthoz:")
                 if st.form_submit_button("Adat Hozzáadása"):
-                    db["stats"][selected_stat]["data"].append([input_date.strftime("%Y-%m-%d"), input_val, input_note])
+                    full_dt_str = datetime.combine(input_date, input_time).strftime("%Y-%m-%d %H:%M")
+                    db["stats"][selected_stat]["data"].append([full_dt_str, input_val, input_note])
                     save_data(db)
                     st.rerun()
 
@@ -285,21 +297,29 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
             stat_data_raw = db["stats"][selected_stat]["data"]
             
-            # Automatikus összesítés a választott nézet alapján
+            # Időszakos összesítés / átalakítás a választott nézet alapján
             if stat_data_raw:
                 df_temp = pd.DataFrame([[item[0], item[1], item[2] if len(item)>2 else ""] for item in stat_data_raw], columns=["Dátum", "Érték", "Megjegyzés"])
                 df_temp["Dátum"] = pd.to_datetime(df_temp["Dátum"])
                 df_temp["Érték"] = pd.to_numeric(df_temp["Érték"])
-                df_temp = df_temp.sort_values("Dátum").set_index("Dátum")
+                df_temp = df_temp.sort_values("Dátum")
                 
-                if indiv_agg == "Heti (Csütörtöki zárás)":
-                    res_df = df_temp.resample("W-THU").agg({"Érték": "sum"}).reset_index()
-                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), ""] for _, row in res_df.iterrows()]
+                if indiv_agg == "Heti (Csütörtöki zárás 14:00)":
+                    df_temp["Period_End"] = df_temp["Dátum"].apply(get_thursday_period_end)
+                    res_df = df_temp.groupby("Period_End").agg({
+                        "Érték": "sum",
+                        "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
+                    }).reset_index()
+                    raw_items = [[row["Period_End"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
                 elif indiv_agg == "Havi összesítés":
-                    res_df = df_temp.resample("ME").agg({"Érték": "sum"}).reset_index()
-                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), ""] for _, row in res_df.iterrows()]
+                    df_temp = df_temp.set_index("Dátum")
+                    res_df = df_temp.resample("ME").agg({
+                        "Érték": "sum",
+                        "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
+                    }).reset_index()
+                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in res_df.iterrows()]
                 else:
-                    raw_items = sorted(stat_data_raw, key=lambda x: str(x[0]))
+                    raw_items = [[row["Dátum"].strftime("%Y-%m-%d"), float(row["Érték"]), row["Megjegyzés"]] for _, row in df_temp.iterrows()]
             else:
                 raw_items = []
             
@@ -465,7 +485,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
     st.title("📈 Statisztikák Relatív Összevetése")
     st.write("A görbék sorszám szerint egymásra illesztve jelennek meg, megőrizve az eredeti naptári dátumokat.")
     
-    comp_period_type = st.radio("Összehasonlítás alapja:", ["Napi", "Heti (Cs)", "Havi"], horizontal=True)
+    comp_period_type = st.radio("Összehasonlítás alapja:", ["Napi", "Heti (Cs 14:00)", "Havi"], horizontal=True)
     show_dates_on_chart = st.checkbox("Eredeti dátumok megjelenítése a feliratokban", value=True)
     
     selected_multi_stats = st.multiselect("Válassz statisztikákat az összevetéshez:", stat_names, default=stat_names[:2] if len(stat_names)>=2 else stat_names)
@@ -484,14 +504,18 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
             clean_data = [[item[0], item[1]] for item in stat_data]
             df = pd.DataFrame(clean_data, columns=["Dátum", "Érték"])
             df["Dátum"] = pd.to_datetime(df["Dátum"])
-            df = df.sort_values("Dátum").set_index("Dátum")
+            df = df.sort_values("Dátum")
             
             try:
-                if comp_period_type == "Napi": res = df.resample("D").sum().reset_index()
-                elif comp_period_type == "Heti (Cs)": res = df.resample("W-THU").sum().reset_index()
-                else: res = df.resample("ME").sum().reset_index()
+                if comp_period_type == "Napi":
+                    res = df.set_index("Dátum").resample("D").sum().reset_index()
+                elif comp_period_type == "Heti (Cs 14:00)":
+                    df["Period_End"] = df["Dátum"].apply(get_thursday_period_end)
+                    res = df.groupby("Period_End").agg({"Érték": "sum"}).reset_index().rename(columns={"Period_End": "Dátum"})
+                else:
+                    res = df.set_index("Dátum").resample("ME").sum().reset_index()
             except Exception:
-                res = df.reset_index()
+                res = df
             
             res["Érték"] = res["Érték"].fillna(0)
             items = res.values.tolist()
@@ -594,7 +618,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                 color_map = {"green": "🟢", "blue": "🔵", "yellow": "🟡", "orange": "🟠", "red": "🔴", "gray": "⚪"}
                                 st.markdown(f"<div style='text-align: right; font-weight: bold; font-size: 14px;'>{color_map.get(condition_color, '⚪')} {condition_text}</div>", unsafe_allow_html=True)
                             
-                            dates_parsed = [datetime.strptime(item[0], "%Y-%m-%d").date() for item in s_data_raw] if s_data_raw else []
+                            dates_parsed = [datetime.strptime(item[0].split()[0], "%Y-%m-%d").date() for item in s_data_raw if len(item[0]) >= 10] if s_data_raw else []
                             min_d = min(dates_parsed) if dates_parsed else None
                             max_d = max(dates_parsed) if dates_parsed else None
                             
@@ -613,7 +637,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                     fig_card.add_hline(y=card_surv_val, line_dash="dash", line_color="#4B5563", line_width=2)
 
                                 formatted_t = [fmt_num(y, s_unit) for y in card_y]
-                                x_fmt = [datetime.strptime(str(item[0]), "%Y-%m-%d").strftime("%b %d") for item in card_items]
+                                x_fmt = [datetime.strptime(str(item[0]).split()[0], "%Y-%m-%d").strftime("%b %d") for item in card_items]
                                 hover_c = [f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}" if n else f"Dátum: {dt}<br>Érték: {txt}" for dt, txt, n in zip(x_fmt, formatted_t, c_notes)]
 
                                 fig_card.add_trace(go.Scatter(x=x_num, y=card_y, mode='markers', marker=dict(size=8, color="#1E293B"), hovertext=hover_c, hoverinfo='text', showlegend=False))
