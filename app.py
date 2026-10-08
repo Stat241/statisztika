@@ -276,23 +276,27 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             
             if stat_data_raw:
                 df_raw = pd.DataFrame(stat_data_raw, columns=["Dátum / Időpont", f"Érték ({current_unit})", "Megjegyzés"])
+                df_raw["Dátum / Időpont"] = df_raw["Dátum / Időpont"].astype(str)
                 
                 edited_df = st.data_editor(
                     df_raw,
                     num_rows="dynamic",
                     use_container_width=True,
+                    column_config={
+                        "Dátum / Időpont": st.column_config.TextColumn("Dátum / Időpont", help="Formátum: ÉÉÉÉ-HH-NN ÓÓ:PP")
+                    },
                     key=f"editor_{selected_stat}"
                 )
                 
                 updated_list = []
                 for _, row in edited_df.iterrows():
                     d_val = str(row["Dátum / Időpont"]).strip() if pd.notnull(row["Dátum / Időpont"]) else ""
-                    if d_val:
+                    if d_val and d_val != "nan" and d_val != "NaT":
                         try:
                             v_val = float(row[f"Érték ({current_unit})"]) if pd.notnull(row[f"Érték ({current_unit})"]) else 0.0
                         except ValueError:
                             v_val = 0.0
-                        n_val = str(row["Megjegyzés"]).strip() if pd.notnull(row["Megjegyzés"]) else ""
+                        n_val = str(row["Megjegyzés"]).strip() if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan" else ""
                         updated_list.append([d_val, v_val, n_val])
                 
                 if updated_list != stat_data_raw:
