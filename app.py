@@ -203,7 +203,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             save_data(db)
             st.sidebar.success("Beállítások elmentve!")
 
-        # Fülek használata, hogy a grafikon teljes szélességben érvényesülhessen
+        # Fülek használata
         tab_chart, tab_table = st.tabs(["📊 Grafikon Nézet", "📋 Adatkezelés & Táblázat"])
 
         with tab_table:
@@ -314,14 +314,14 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             line_width=4
                         )
 
-                    # Címkék előkészítése (időszakos érték + zárójelben feketével az akkumulált)
+                    # Címkék előkészítése
                     formatted_texts = []
                     for idx, val in enumerate(y_vals):
                         v_str = f"{int(val):,} {current_unit}".replace(",", " ") if float(val).is_integer() else f"{val} {current_unit}"
                         if show_acc_in_brackets and accumulated_vals:
                             acc_val = accumulated_vals[idx]
                             acc_str = f"{int(acc_val):,}".replace(",", " ") if float(acc_val).is_integer() else f"{acc_val}"
-                            formatted_texts.append(f"{v_str}<br><span style='font-size:14px; color:#000000;'>({acc_str} {current_unit})</span>")
+                            formatted_texts.append(f"{v_str}<br><span style='font-size:15px; color:#000000;'>({acc_str} {current_unit})</span>")
                         else:
                             formatted_texts.append(v_str)
 
@@ -338,30 +338,30 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     fig.add_trace(go.Scatter(
                         x=x_numeric, y=y_vals, mode='markers',
-                        marker=dict(size=14, color="#1E293B"),
+                        marker=dict(size=16, color="#1E293B"),
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
-                    # Értékek feliratozása
+                    # Értékek feliratozása megnövelt betűmérettel
                     for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
                         if idx == 0:
                             fig.add_annotation(
-                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, xshift=14, textangle=-90,
-                                font=dict(size=16, color="#000000", family="Arial Black"),
+                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=18, xshift=14, textangle=-90,
+                                font=dict(size=18, color="#000000", family="Arial Black"),
                                 xanchor="left", yanchor="bottom"
                             )
                         else:
                             fig.add_annotation(
-                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=15, textangle=-90,
-                                font=dict(size=16, color="#000000", family="Arial Black"),
+                                x=x_val, y=y_val, text=txt, showarrow=False, yshift=18, textangle=-90,
+                                font=dict(size=18, color="#000000", family="Arial Black"),
                                 xanchor="center", yanchor="bottom"
                             )
 
                     # Név és Poszt bal felül
                     if person_name or person_post:
                         header_lines = []
-                        if person_name: header_lines.append(f"<span style='font-size: 26px;'><b>{person_name}</b></span>")
-                        if person_post: header_lines.append(f"<span style='font-size: 20px; color: #000000;'>{person_post}</span>")
+                        if person_name: header_lines.append(f"<span style='font-size: 30px;'><b>{person_name}</b></span>")
+                        if person_post: header_lines.append(f"<span style='font-size: 22px; color: #000000;'>{person_post}</span>")
                         
                         fig.add_annotation(
                             xref="paper", yref="paper", x=0.0, y=1.12,
@@ -369,7 +369,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             align="left", xanchor="left", yanchor="bottom", font=dict(family="Arial Black", color="#000000")
                         )
 
-                    # Cél kiírása a jobb felső sarokba a grafikonon belül
+                    # Cél kiírása a jobb felső sarokba
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = f"{int(calc_goal_val):,}".replace(",", " ") if float(calc_goal_val).is_integer() else f"{calc_goal_val}"
                         fig.add_annotation(
@@ -377,33 +377,34 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             text=f"🎯 Cél: {goal_fmt} {current_unit}",
                             showarrow=False,
                             align="right", xanchor="right", yanchor="bottom",
-                            font=dict(size=18, color="#2563EB", family="Arial Black")
+                            font=dict(size=20, color="#2563EB", family="Arial Black")
                         )
 
                     yaxis_dict = dict(
                         title=dict(text="", font=dict(color="#000000", size=1)), 
-                        showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
-                        tickfont=dict(color="#000000", size=18, family="Arial Black"),
-                        showline=True, linecolor="#000000", linewidth=3
+                        showgrid=True, gridcolor="#F1F5F9", gridwidth=3,
+                        tickfont=dict(color="#000000", size=20, family="Arial Black"),
+                        showline=True, linecolor="#000000", linewidth=3.5
                     )
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
 
                     layout_args = dict(
                         title=dict(
-                            text=f"<b>{selected_stat}</b><br><span style='font-size: 24px; color: #1E293B;'>Időszak: {date_range_str}</span>",
+                            text=f"<b>{selected_stat}</b><br><span style='font-size: 26px; color: #1E293B;'>Időszak: {date_range_str}</span>",
                             x=0.5, xref="paper", xanchor='center', yanchor='top',
-                            font=dict(size=34, color="#000000")
+                            font=dict(size=38, color="#000000")
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
                         autosize=True,
-                        margin=dict(t=160, b=150, l=60, r=60),
+                        height=680,  # MEGNÖVELT MAGASSÁG A NAGYOBB MEGJELENÉSHEZ
+                        margin=dict(t=180, b=160, l=80, r=80),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
                             tickmode="array", tickvals=x_numeric, ticktext=x_formatted, tickangle=-90,
-                            showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
-                            tickfont=dict(color="#000000", size=15, family="Arial Black"),
-                            showline=True, linecolor="#000000", linewidth=3,
+                            showgrid=True, gridcolor="#F1F5F9", gridwidth=3,
+                            tickfont=dict(color="#000000", size=17, family="Arial Black"),
+                            showline=True, linecolor="#000000", linewidth=3.5,
                             range=[0, len(x_numeric) - 1] if len(x_numeric) > 1 else [-0.5, 0.5]
                         ),
                         yaxis=yaxis_dict
@@ -478,7 +479,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
             
             fig.update_layout(
                 title=dict(text=f"<b>Statisztikák Relatív Összevetése ({comp_period_type})</b>", x=0.5, font=dict(size=36, color="#000000")),
-                plot_bgcolor="white", paper_bgcolor="white", margin=dict(t=120, b=120, l=60, r=40),
+                plot_bgcolor="white", paper_bgcolor="white", height=650, margin=dict(t=120, b=120, l=60, r=40),
                 xaxis=dict(tickmode="array", tickvals=list(range(1, max_len + 1)), ticktext=[f"{i}." for i in range(1, max_len + 1)], title=dict(text="Relatív Időszak Sorszáma", font=dict(size=16, color="#000000")), showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5, showline=True, linecolor="#000000", linewidth=3, tickfont=dict(color="#000000", size=15, family="Arial Black")),
                 yaxis=dict(rangemode="tozero", showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5, showline=True, linecolor="#000000", linewidth=3, tickfont=dict(color="#000000", size=18, family="Arial Black")),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=16))
@@ -706,3 +707,4 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                 st.rerun()
         else:
             st.info("Az archívum üres.")
+            
