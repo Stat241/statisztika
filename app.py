@@ -44,23 +44,26 @@ st.markdown("""
         }
         .js-plotly-plot {
             position: fixed !important;
-            left: 5mm !important;
-            top: 5mm !important;
-            width: calc(100vw - 10mm) !important;
-            height: calc(100vh - 10mm) !important;
+            left: 10mm !important;
+            top: 10mm !important;
+            width: calc(100vw - 20mm) !important;
+            height: calc(100vh - 20mm) !important;
             max-width: none !important;
             max-height: none !important;
-            border: 5px solid #000000 !important;
+            border: 6px solid #000000 !important;
             box-sizing: border-box !important;
-            padding: 5mm !important;
+            padding: 8mm !important;
             background: #ffffff !important;
             margin: 0 !important;
             page-break-inside: avoid !important;
             page-break-after: avoid !important;
         }
-        .js-plotly-plot .svg-container {
+        .js-plotly-plot .svg-container,
+        .js-plotly-plot svg.main-svg {
             width: 100% !important;
             height: 100% !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
         }
     }
     </style>
