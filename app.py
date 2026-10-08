@@ -15,7 +15,7 @@ st.markdown("""
     @media print {
         @page { 
             size: A4 landscape; 
-            margin: 5mm; 
+            margin: 10mm; 
         }
         body, html {
             background-color: #ffffff !important;
@@ -42,15 +42,18 @@ st.markdown("""
             visibility: visible !important;
         }
         .js-plotly-plot {
-            position: fixed !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            max-width: 100% !important;
-            max-height: 100% !important;
+            position: absolute !important;
+            left: 10mm !important;
+            top: 10mm !important;
+            width: 277mm !important;
+            height: 190mm !important;
+            max-width: 277mm !important;
+            max-height: 190mm !important;
+            border: 3px solid #000000 !important;
+            box-sizing: border-box !important;
+            padding: 5mm !important;
+            background: #ffffff !important;
             margin: 0 !important;
-            padding: 0 !important;
         }
         .js-plotly-plot .svg-container {
             width: 100% !important;
@@ -391,7 +394,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                                 xanchor="center", yanchor="bottom"
                             )
 
-                    # Név és Poszt bal felül (megfelelő vertikális távolsággal, hogy ne érjenek össze)
+                    # Név és Poszt bal felül
                     if person_name or person_post:
                         header_lines = []
                         if person_name: header_lines.append(f"<span style='font-size: 26px;'><b>{person_name}</b></span>")
