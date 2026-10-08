@@ -173,8 +173,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         person_name = st.sidebar.text_input("Név (Fejlécbe):", value=stat_settings.get("person_name", ""))
         person_post = st.sidebar.text_input("Poszt (Fejlécbe):", value=stat_settings.get("person_post", ""))
         
-        chart_width_val = st.sidebar.number_input("Grafikon szélessége (px):", min_value=600, max_value=5000, value=int(stat_settings.get("chart_width", 1400)), step=100)
-        
         col_min, col_max, col_step = st.sidebar.columns(3)
         with col_min: ymin = st.text_input("Min", value=stat_settings.get("ymin", ""))
         with col_max: ymax = st.text_input("Max", value=stat_settings.get("ymax", ""))
@@ -207,7 +205,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         if st.sidebar.button("💾 Beállítások Mentése"):
             if "settings" not in db: db["settings"] = {}
             db["settings"][selected_stat] = {
-                "person_name": person_name, "person_post": person_post, "chart_width": chart_width_val,
+                "person_name": person_name, "person_post": person_post,
                 "ymin": ymin, "ymax": ymax, "ystep": ystep, 
                 "survival_type": survival_type, "survival_value": survival_value, "show_survival": show_survival_line,
                 "goal_type": goal_type, "goal_val_target": goal_value,
@@ -411,7 +409,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             font=dict(size=38, color="#000000")
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
-                        width=chart_width_val,
                         margin=dict(t=150, b=150, l=60, r=60),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
@@ -431,7 +428,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         pass
 
                     fig.update_layout(**layout_args)
-                    st.plotly_chart(fig, use_container_width=False)
+                    st.plotly_chart(fig, use_container_width=True)
 
 # 2. TÖBB STATISZTIKA ÖSSZEVETÉSE
 elif selected_menu == "📈 Több Statisztika Összevetése":
