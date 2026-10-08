@@ -47,6 +47,27 @@ def fmt_num(val, unit=""):
         return f"{s}.{clean_unit}."
     return s
 
+def normalize_entry(item):
+    if not item or len(item) < 2:
+        return None
+    d_val = str(item[0]).strip()
+    try:
+        v_val = float(item[1])
+        if v_val.is_integer():
+            v_val = int(v_val)
+    except (ValueError, TypeError):
+        v_val = 0
+    n_val = str(item[2]).strip() if len(item) > 2 and item[2] is not None and str(item[2]) != "nan" else ""
+    return [d_val, v_val, n_val]
+
+def normalize_list(lst):
+    res = []
+    for it in lst:
+        norm = normalize_entry(it)
+        if norm:
+            res.append(norm)
+    return res
+
 def load_data():
     if os.path.exists(DB_FILE):
         try:
@@ -287,19 +308,18 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     key=f"editor_{selected_stat}"
                 )
                 
-                updated_list = []
+                raw_edited = []
                 for _, row in edited_df.iterrows():
-                    d_val = str(row["Dátum / Időpont"]).strip() if pd.notnull(row["Dátum / Időpont"]) else ""
-                    if d_val and d_val != "nan" and d_val != "NaT":
-                        try:
-                            v_val = float(row[f"Érték ({current_unit})"]) if pd.notnull(row[f"Érték ({current_unit})"]) else 0.0
-                        except ValueError:
-                            v_val = 0.0
-                        n_val = str(row["Megjegyzés"]).strip() if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan" else ""
-                        updated_list.append([d_val, v_val, n_val])
+                    d = row["Dátum / Időpont"]
+                    v = row[f"Érték ({current_unit})"]
+                    n = row["Megjegyzés"]
+                    raw_edited.append([d, v, n])
+                    
+                updated_normalized = normalize_list(raw_edited)
+                existing_normalized = normalize_list(stat_data_raw)
                 
-                if updated_list != stat_data_raw:
-                    db["stats"][selected_stat]["data"] = updated_list
+                if updated_normalized != existing_normalized:
+                    db["stats"][selected_stat]["data"] = updated_normalized
                     save_data(db)
                     st.rerun()
             else:
@@ -372,19 +392,28 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     unique_labels = [item["label"] for item in raw_items]
 
                 else:
-                    # NAPI ADATOK (Egy függőleges vonalon a 14:00 előtti és utáni adatok)
+                    # NAPI ADATOK (Sima napok összeadva, Csütörtökön 14:00 előtti és utáni külön pont egy függőleges vonalon)
                     df_temp["Date_Only"] = df_temp["Sort_Key"].dt.strftime("%Y-%m-%d")
-                    df_temp["Is_Post_14"] = (df_temp["Sort_Key"].dt.hour > 14) | ((df_temp["Sort_Key"].dt.hour == 14) & (df_temp["Sort_Key"].dt.minute > 0))
+                    
+                    def get_bucket_type(row):
+                        dt = row["Sort_Key"]
+                        if dt.weekday() == 3:  # Csütörtök
+                            if dt.hour > 14 or (dt.hour == 14 and dt.minute > 0):
+                                return "post_14"
+                            else:
+                                return "pre_14"
+                        return "all"
 
-                    res_df = df_temp.groupby(["Date_Only", "Is_Post_14"], sort=False).agg({
+                    df_temp["Bucket_Type"] = df_temp.apply(get_bucket_type, axis=1)
+
+                    res_df = df_temp.groupby(["Date_Only", "Bucket_Type"], sort=False).agg({
                         "Sort_Key": "min",
                         "Érték": "sum",
                         "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
                     }).reset_index().sort_values("Sort_Key")
 
                     unique_dates = []
-                    for _, row in res_df.iterrows():
-                        d = row["Date_Only"]
+                    for d in res_df["Date_Only"]:
                         if d not in unique_dates:
                             unique_dates.append(d)
 
@@ -393,10 +422,16 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     raw_items = []
                     for _, row in res_df.iterrows():
                         d_only = row["Date_Only"]
-                        is_p14 = row["Is_Post_14"]
+                        b_type = row["Bucket_Type"]
                         d_obj = datetime.strptime(d_only, "%Y-%m-%d")
                         fmt_d = f"{d_obj.year}. {d_obj.month:02d}. {d_obj.day:02d}."
-                        hover_lbl = fmt_d + (" (14:00 után)" if is_p14 else " (14:00 előtt)")
+                        
+                        if b_type == "post_14":
+                            hover_lbl = fmt_d + " (14:00 után)"
+                        elif b_type == "pre_14":
+                            hover_lbl = fmt_d + " (14:00 előtt)"
+                        else:
+                            hover_lbl = fmt_d
 
                         raw_items.append({
                             "x": date_to_x[d_only],
