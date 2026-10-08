@@ -174,6 +174,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         person_post = st.sidebar.text_input("Poszt (Fejlécbe):", value=stat_settings.get("person_post", ""))
         
         chart_width_val = st.sidebar.number_input("Grafikon szélessége (px):", min_value=600, max_value=5000, value=int(stat_settings.get("chart_width", 1400)), step=100)
+        point_spacing = st.sidebar.slider("Pontok távolsága egymástól:", min_value=1, max_value=10, value=int(stat_settings.get("point_spacing", 1)), step=1)
         
         col_min, col_max, col_step = st.sidebar.columns(3)
         with col_min: ymin = st.text_input("Min", value=stat_settings.get("ymin", ""))
@@ -208,6 +209,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             if "settings" not in db: db["settings"] = {}
             db["settings"][selected_stat] = {
                 "person_name": person_name, "person_post": person_post, "chart_width": chart_width_val,
+                "point_spacing": point_spacing,
                 "ymin": ymin, "ymax": ymax, "ystep": ystep, 
                 "survival_type": survival_type, "survival_value": survival_value, "show_survival": show_survival_line,
                 "goal_type": goal_type, "goal_val_target": goal_value,
@@ -302,7 +304,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 fig = go.Figure()
 
                 if len(raw_items) > 0:
-                    x_numeric = list(range(len(raw_items)))
+                    # Az első pont mindig 0, a többi a point_spacing alapján távolodik
+                    x_numeric = [i * point_spacing for i in range(len(raw_items))]
                     y_vals = [item[1] for item in raw_items]
                     notes = [item[2] if len(item) > 2 else "" for item in raw_items]
 
@@ -357,7 +360,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
-                    # Értékek feliratozása (megnövelt betűméret, első elem picit jobbra tolva)
+                    # Értékek feliratozása (megnövelt betűméret, első elem picit jobbra tolva, bal szélen kezdődve)
                     for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
                         if idx == 0:
                             fig.add_annotation(
@@ -419,7 +422,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5,
                             tickfont=dict(color="#000000", size=15, family="Arial Black"),
                             showline=True, linecolor="#000000", linewidth=3,
-                            range=[0, len(x_numeric) - 1] if len(x_numeric) > 1 else [-0.5, 0.5]
+                            range=[-0.5, x_numeric[-1] + 0.5] if len(x_numeric) > 1 else [-0.5, 0.5]
                         ),
                         yaxis=yaxis_dict
                     )
