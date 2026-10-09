@@ -309,7 +309,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 if st.form_submit_button("Adat Hozzáadása"):
                     full_dt_str = f"{input_date.strftime('%Y-%m-%d')} {input_time.strftime('%H:%M')}"
                     db["stats"][selected_stat]["data"].append([full_dt_str, input_val, input_note])
-                    # Automatikus időrendbe rendezés mentés előtt
                     db["stats"][selected_stat]["data"] = sorted(
                         db["stats"][selected_stat]["data"], 
                         key=lambda x: pd.to_datetime(str(x[0]), format="mixed", errors="coerce")
@@ -587,10 +586,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         if item['note']: h_txt += f"<br>Megjegyzés: {item['note']}"
                         hover_texts.append(h_txt)
 
-                    # CLIPONAXIS=FALSE A 0-ÁS ÉRTÉKEK TELI KÖRÉHEZ
                     fig.add_trace(go.Scatter(
                         x=x_numeric, y=y_vals, mode='markers',
-                        marker=dict(size=16, color="#1E293B", cliponaxis=False),
+                        marker=dict(size=16, color="#1E293B"),
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
@@ -601,7 +599,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
-                    # BAL OLDALI FEJLÉC
                     if person_name:
                         fig.add_annotation(
                             xref="paper", yref="paper", x=0.0, y=1.15,
@@ -617,7 +614,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             font=dict(size=20, family="Arial Black", color="#000000")
                         )
 
-                    # CÉLKITŰZÉS ANNOTÁCIÓ
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
@@ -637,10 +633,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
 
-                    # X-TARTOMÁNY: PONTOSAN 0-TÓL INDUL, HOGY A BAL SZÉLEN LEGYEN AZ ELSŐ PONT
                     xaxis_range = [0, max(unique_x) + 0.6] if len(unique_x) > 1 else [0, 0.5]
 
-                    # DINAMIKUS MARGÓK ÉS MAGASSÁG HASZNÁLATA
                     layout_args = dict(
                         title=dict(
                             text=f"<b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
@@ -729,7 +723,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
                     x=x_idx_current, y=y_vals, mode='lines+markers',
                     name=stat_name, customdata=orig_dates,
                     hovertemplate="<b>%{fullData.name}</b><br>Sorszám: %{x}.<br><b>Dátum: %{customdata}</b><br>Érték: %{text}<extra></extra>",
-                    text=formatted_texts, line=dict(color=trace_color, width=5), marker=dict(size=12, color=trace_color, cliponaxis=False)
+                    text=formatted_texts, line=dict(color=trace_color, width=5), marker=dict(size=12, color=trace_color)
                 ))
                 
                 for x_val, y_val, txt, d_str in zip(x_idx_current, y_vals, formatted_texts, orig_dates):
@@ -834,7 +828,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                 x_fmt = [pd.to_datetime(str(item[0]), format="mixed", errors="coerce").strftime("%b %d") for item in card_items]
                                 hover_c = [f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}" if n else f"Dátum: {dt}<br>Érték: {txt}" for dt, txt, n in zip(x_fmt, formatted_t, c_notes)]
 
-                                fig_card.add_trace(go.Scatter(x=x_num, y=card_y, mode='markers', marker=dict(size=8, color="#1E293B", cliponaxis=False), hovertext=hover_c, hoverinfo='text', showlegend=False))
+                                fig_card.add_trace(go.Scatter(x=x_num, y=card_y, mode='markers', marker=dict(size=8, color="#1E293B"), hovertext=hover_c, hoverinfo='text', showlegend=False))
                                 
                                 for x_val, y_val, txt in zip(x_num, card_y, formatted_t):
                                     fig_card.add_annotation(
