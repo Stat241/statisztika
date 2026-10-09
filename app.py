@@ -442,7 +442,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
           )
         save_data(st.session_state.db)
         st.sidebar.success("Minden statisztika megkapta ezeket a beállításokat!")
-        st.rer()
+        st.rerun()
     else:
       person_name = stat_settings.get("person_name", "Bíró Laura")
       person_post = stat_settings.get("person_post", "DIV1")
