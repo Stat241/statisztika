@@ -9,16 +9,16 @@ import streamlit.components.v1 as components
 # ================= OLDAL ALAPBEÁLLÍTÁSAI =================
 st.set_page_config(page_title="Statisztika Kezelő Rendszer", layout="wide", page_icon="📊")
 
-# ================= NYOMTATÁSI CSS (HAJSZÁLPONTOS 297mm x 210mm A4 FEKVŐ) =================
+# ================= NYOMTATÁSI CSS =================
 st.markdown("""
     <style>
     @media print {
         @page {
-            size: 297mm 210mm !important; /* Pontos A4 fekvő méret */
-            margin: 0mm !important;
+            size: A4 landscape;
+            margin: 5mm !important;
         }
         
-        /* Felesleges Streamlit elemek elrejtése */
+        /* Rejtett elemek nyomtatáskor */
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -31,25 +31,22 @@ st.markdown("""
             display: none !important;
         }
         
-        /* Teljes képernyős kitöltés 1 oldalon */
+        /* Tiszta keret az A4 laphoz */
         html, body, [data-testid="stAppViewContainer"], .main, .block-container, [data-testid="stVerticalBlock"], .stTabs, [data-testid="stTabContent"] {
-            width: 100vw !important;
-            max-width: 100vw !important;
-            height: 100vh !important;
-            max-height: 100vh !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
-            overflow: hidden !important;
+            overflow: visible !important;
             page-break-after: avoid !important;
             page-break-inside: avoid !important;
         }
         
-        /* Grafikon kifeszítése a nyomtatási felületre */
         .stPlotlyChart, .js-plotly-plot, .plot-container {
-            width: 100vw !important;
-            max-width: 100vw !important;
-            height: 98vh !important;
+            width: 100% !important;
+            max-width: 100% !important;
             margin: 0 auto !important;
             padding: 0 !important;
             page-break-inside: avoid !important;
@@ -212,11 +209,23 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         stat_settings = db.get("settings", {}).get(selected_stat, {})
         is_inverted = db["stats"][selected_stat].get("inverted", False)
 
-        person_name = st.sidebar.text_input("Név (Fejlécbe):", value=stat_settings.get("person_name", ""))
-        person_post = st.sidebar.text_input("Poszt (Fejlécbe):", value=stat_settings.get("person_post", ""))
+        person_name = st.sidebar.text_input("Név (Fejlécbe):", value=stat_settings.get("person_name", "Bíró Laura"))
+        person_post = st.sidebar.text_input("Poszt (Fejlécbe):", value=stat_settings.get("person_post", "DIV1"))
         
         is_stat_inverted_check = st.sidebar.checkbox("Fordított statisztika (0 felül van)", value=is_inverted)
         
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("📐 Grafikon & Nyomtatás Méretezése")
+        chart_height = st.sidebar.slider("Grafikon magassága (px):", min_value=300, max_value=900, value=int(stat_settings.get("chart_height", 550)), step=10)
+        
+        col_m1, col_m2 = st.sidebar.columns(2)
+        with col_m1:
+            margin_l = st.number_input("Bal margó (px):", value=int(stat_settings.get("margin_l", 60)), step=5)
+            margin_t = st.number_input("Felső margó (px):", value=int(stat_settings.get("margin_t", 130)), step=5)
+        with col_m2:
+            margin_r = st.number_input("Jobb margó (px):", value=int(stat_settings.get("margin_r", 100)), step=5)
+            margin_b = st.number_input("Alsó margó (px):", value=int(stat_settings.get("margin_b", 90)), step=5)
+
         st.sidebar.markdown("---")
         st.sidebar.subheader("📅 Időszakos összesítés")
         indiv_agg = st.sidebar.selectbox("Grafikon nézet:", ["Napi adatok", "Heti (Csütörtöki zárás 14:00)", "Havi összesítés"], key="indiv_agg_view")
@@ -235,7 +244,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         default_goal_val = mode_settings.get("goal_val_target", 0.0)
 
         st.sidebar.markdown("---")
-        st.sidebar.subheader(f"📐 Méretezés & Skála ({indiv_agg})")
+        st.sidebar.subheader(f"📐 Skála Tengely Beállítások ({indiv_agg})")
         col_min, col_max, col_step = st.sidebar.columns(3)
         with col_min: ymin = st.text_input("Min", value=default_ymin, key=f"ymin_{indiv_agg}")
         with col_max: ymax = st.text_input("Max", value=default_ymax, key=f"ymax_{indiv_agg}")
@@ -263,6 +272,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             
             db["settings"][selected_stat]["person_name"] = person_name
             db["settings"][selected_stat]["person_post"] = person_post
+            db["settings"][selected_stat]["chart_height"] = chart_height
+            db["settings"][selected_stat]["margin_l"] = margin_l
+            db["settings"][selected_stat]["margin_r"] = margin_r
+            db["settings"][selected_stat]["margin_t"] = margin_t
+            db["settings"][selected_stat]["margin_b"] = margin_b
             db["settings"][selected_stat]["show_acc_in_brackets"] = show_acc_in_brackets
             db["settings"][selected_stat]["initial_accumulated_val"] = initial_accumulated_val
             
@@ -568,17 +582,17 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
-                    # NÉV ÉS POSZT ANNOTÁCIÓK A BAL SZÉLEN
+                    # BAL OLDALI FEJLÉC (NÉV & POSZT A SKÁLA FELETT)
                     if person_name:
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.18,
+                            xref="paper", yref="paper", x=0.0, y=1.15,
                             text=f"<b>{person_name}</b>", showarrow=False,
                             align="left", xanchor="left", yanchor="bottom",
                             font=dict(size=26, family="Arial Black", color="#000000")
                         )
                     if person_post:
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.08,
+                            xref="paper", yref="paper", x=0.0, y=1.05,
                             text=person_post, showarrow=False,
                             align="left", xanchor="left", yanchor="bottom",
                             font=dict(size=20, family="Arial Black", color="#000000")
@@ -588,7 +602,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=1.0, y=1.10,
+                            xref="paper", yref="paper", x=1.0, y=1.08,
                             text=f"🎯 Cél: {goal_fmt}",
                             showarrow=False,
                             align="right", xanchor="right", yanchor="bottom",
@@ -604,10 +618,10 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
 
-                    # BŐVÍTETT X-TARTOMÁNY (A JOBB OLDAL TÖKÉLETES ILLESZTÉSÉHEZ)
-                    xaxis_range = [-0.5, max(unique_x) + 0.7] if len(unique_x) > 1 else [-0.8, 0.8]
+                    # BŐVÍTETT KIFUTÁSI TARTOMÁNY (A JOBB OLDALI LEVÁGÁS ELLEN)
+                    xaxis_range = [-0.4, max(unique_x) + 0.8] if len(unique_x) > 1 else [-0.6, 0.6]
 
-                    # A4 FEKVŐ OPTIMALIZÁLT MARGÓK ÉS STRUKTÚRA
+                    # DINAMIKUS MARGÓK ÉS MAGASSÁG HASZNÁLATA
                     layout_args = dict(
                         title=dict(
                             text=f"<b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
@@ -616,8 +630,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
                         autosize=True,
-                        height=580,
-                        margin=dict(t=120, b=90, l=55, r=65),
+                        height=chart_height,
+                        margin=dict(t=margin_t, b=margin_b, l=margin_l, r=margin_r),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
                             tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
