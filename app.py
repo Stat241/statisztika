@@ -987,3 +987,4 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                 st.rerun()
         else:
             st.info("Az archívum üres.")
+            
