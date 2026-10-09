@@ -465,7 +465,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     )
 
     mode_settings = stat_settings.get(indiv_agg, {})
-    valid_goals = ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"]
+    valid_goals = ["Nincs", "Fix érték (db/Ft)"]
 
     if st.session_state.user_role == "admin":
       st.sidebar.markdown("---")
@@ -763,7 +763,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         running_tot += item["val"]
         accumulated_vals.append(running_tot)
 
-    y_vals_temp = [item["val"] for item in raw_items] if raw_items else []
     calc_survival_val = (
         survival_value if (show_survival_line and survival_value > 0) else 0.0
     )
@@ -771,8 +770,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     calc_goal_val = 0.0
     if goal_type == "Fix érték (db/Ft)":
       calc_goal_val = goal_value
-    elif goal_type == "Százalékos növekedés (%)" and len(y_vals_temp) > 0:
-      calc_goal_val = y_vals_temp[-1] * (1 + goal_value / 100)
 
     if stat_data_raw:
       date_range_str = ""
@@ -1530,10 +1527,6 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
             card_calc_goal = 0.0
             if card_goal_type == "Fix érték (db/Ft)":
               card_calc_goal = card_goal_target
-            elif (
-                card_goal_type == "Százalékos növekedés (%)" and len(card_y) > 0
-            ):
-              card_calc_goal = card_y[-1] * (1 + card_goal_target / 100)
 
             condition_text, condition_color = calculate_stat_condition(
                 card_items, card_surv_val
