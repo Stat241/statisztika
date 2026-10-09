@@ -907,7 +907,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
               font=dict(size=20, color="#C5A059", family="Arial Black"),
           )
 
-        # --- TENGELY SKÁLA ÉS FORDÍTOTT LOGIKA JAVÍTÁSA ---
+        # --- TENGELY SKÁLA ÉS ROBUSTUS FORDÍTOTT TARTOMÁNY KEZELÉS ---
         yaxis_dict = dict(
             title=dict(text="", font=dict(color="#000000", size=1)),
             showgrid=True,
@@ -928,10 +928,12 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
               and ymax is not None
               and str(ymax).strip() != ""
           ):
-            f_min = float(ymin)
-            f_max = float(ymax)
+            clean_ymin = str(ymin).replace(",", ".").replace(" ", "").strip()
+            clean_ymax = str(ymax).replace(",", ".").replace(" ", "").strip()
+            f_min = float(clean_ymin)
+            f_max = float(clean_ymax)
+
             if is_stat_inverted_check:
-              # Fordított skálánál a Plotly [Max, Min] formátumban várja a határokat
               yaxis_dict["range"] = [f_max, f_min]
             else:
               yaxis_dict["range"] = [f_min, f_max]
@@ -947,7 +949,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         if ystep is not None and str(ystep).strip() != "":
           try:
-            yaxis_dict["dtick"] = float(ystep)
+            clean_ystep = str(ystep).replace(",", ".").replace(" ", "").strip()
+            yaxis_dict["dtick"] = float(clean_ystep)
           except Exception:
             pass
 
@@ -1334,7 +1337,6 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
   if not stat_names:
     st.warning("⚠️ Nincs számodra megjeleníthető statisztika.")
   else:
-    # --- IDŐSZAKI BONTÁS ÉS CSOPORT SZŰRŐ ---
     col_dash_period, col_dash_group = st.columns([2, 2])
     with col_dash_period:
       dash_period = st.radio(
@@ -1395,7 +1397,6 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                 f"{p_name} ({p_post})" if p_name or p_post else "Nincs megadva"
             )
 
-            # --- IDŐSZAKI AGGREGÁCIÓ A DASHBOARD KÁRTYÁKHOZ ---
             if s_data_raw:
               df_card = pd.DataFrame(
                   [
@@ -1486,7 +1487,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                       [d_str, float(row["Érték"]), row["Megjegyzés"]]
                   )
 
-              else:  # Nyers / Napi adatok
+              else:
                 card_items = sorted(s_data_raw, key=lambda x: str(x[0]))
             else:
               card_items = []
@@ -1911,7 +1912,6 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
             st.session_state.db["stats"][s_key]["group"] = "Egyéb"
         save_data(st.session_state.db)
 
-        # Töröljük a felhasználói csoport-hozzárendelésekből is
         for u_k in users_db:
           if group_to_delete in users_db[u_k].get("assigned_groups", []):
             users_db[u_k]["assigned_groups"].remove(group_to_delete)
@@ -1952,4 +1952,3 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
         st.rerun()
     else:
       st.info("Az archívum üres.")
-        
