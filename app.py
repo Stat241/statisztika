@@ -137,28 +137,49 @@ def save_archive(archive_data):
     with open(ARCHIVE_FILE, "w", encoding="utf-8") as f:
         json.dump(archive_data, f, ensure_ascii=False, indent=2)
 
+# ================= L. RON HUBBARD TREND ÉS ÁLLAPOT SZÁMÍTÁS =================
 def calculate_stat_condition(data, survival_line=0):
     if not data or len(data) < 1:
-        return "Normál", "gray"
+        return "Nincs adat", "gray"
     
     sorted_d = sorted(data, key=lambda x: str(x[0]))
-    last_val = sorted_d[-1][1]
+    last_val = float(sorted_d[-1][1])
     
+    # 1. Életvonal vizsgálata (Hubbard szerinti Nem-létezés)
     if survival_line > 0 and last_val < survival_line:
-        return "Nem létezés (Életvonal alatt)", "red"
+        return "Nem-létezés (Életvonal alatt)", "red"
     
-    if len(data) < 2:
-        return "Normál", "blue"
+    if len(sorted_d) < 2:
+        return "Normál trend", "green"
         
-    prev_val = sorted_d[-2][1]
-    if last_val == 0 and prev_val == 0:
-        return "Nem létezés", "red"
-    elif last_val < prev_val:
-        return "Vészhelyzet", "orange"
-    elif last_val == prev_val:
-        return "Veszély", "yellow"
+    # 2. Hubbard-féle 4 hetes / 4 periódusos trend elemzése
+    window = sorted_d[-4:] if len(sorted_d) >= 4 else sorted_d
+    vals = [float(item[1]) for item in window]
+    
+    if all(v == 0 for v in vals):
+        return "Nem-létezés", "red"
+        
+    first_v = vals[0]
+    last_v = vals[-1]
+    diff = last_v - first_v
+    
+    # Hubbard trend besorolása a 4 hetes összkép (overall trend) alapján
+    if diff > 0:
+        base = first_v if first_v > 0 else 1.0
+        growth_ratio = diff / base
+        if growth_ratio >= 0.5:
+            return "Bőség trend", "green"
+        else:
+            return "Normál trend", "green"
+    elif diff == 0:
+        return "Vészhelyzet trend", "orange"
     else:
-        return "Bőség / Normál", "green"
+        base = first_v if first_v > 0 else 1.0
+        drop_ratio = abs(diff) / base
+        if drop_ratio >= 0.3:
+            return "Veszély trend", "red"
+        else:
+            return "Vészhelyzet trend", "orange"
 
 def get_thursday_period_end(dt):
     days_to_thu = 3 - dt.weekday()
@@ -811,15 +832,24 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     p_post = s_settings.get("person_post", "")
                     assigned_str = f"{p_name} ({p_post})" if p_name or p_post else "Nincs megadva"
                     
-                    # --- ÉLETVOLAL ÉS CÉL KIOLVASÁSA A DASHBOARDHOZ ---
-                    card_mode_settings = s_settings.get("Napi adatok", {})
-                    card_surv_val = float(card_mode_settings.get("survival_value", 0.0)) if card_mode_settings.get("show_survival", True) else 0.0
+                    # --- ÉLETVONAL ÉS CÉL BEOLVASÁSA BÁRMELYIK MENTETT MÓDBÓL ---
+                    card_surv_val = 0.0
+                    card_goal_type = "Nincs"
+                    card_goal_target = 0.0
                     
-                    card_goal_type = card_mode_settings.get("goal_type", "Nincs")
-                    card_goal_target = float(card_mode_settings.get("goal_val_target", 0.0))
+                    for m_key in ["Heti (Csütörtöki zárás 14:00)", "Napi adatok", "Havi összesítés"]:
+                        if m_key in s_settings:
+                            m_dict = s_settings[m_key]
+                            if m_dict.get("show_survival", True) and float(m_dict.get("survival_value", 0.0)) > 0:
+                                card_surv_val = float(m_dict.get("survival_value", 0.0))
+                            if m_dict.get("goal_type", "Nincs") != "Nincs":
+                                card_goal_type = m_dict.get("goal_type", "Nincs")
+                                card_goal_target = float(m_dict.get("goal_val_target", 0.0))
+                            if card_surv_val > 0 or card_goal_type != "Nincs":
+                                break
                     
                     card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
-                    card_y = [item[1] for item in card_items] if card_items else []
+                    card_y = [float(item[1]) for item in card_items] if card_items else []
                     
                     card_calc_goal = 0.0
                     if card_goal_type == "Fix érték (db/Ft)":
@@ -827,6 +857,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     elif card_goal_type == "Százalékos növekedés (%)" and len(card_y) > 0:
                         card_calc_goal = card_y[-1] * (1 + card_goal_target / 100)
                     
+                    # Hubbard 4 hetes/periódusos trend és állapot számítása
                     condition_text, condition_color = calculate_stat_condition(s_data_raw, card_surv_val)
                     
                     with cols[j]:
@@ -854,11 +885,11 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                     color = "#00C853" if (y2 < y1 if s_inverted else y2 > y1) else "#FF1744"
                                     fig_card.add_trace(go.Scatter(x=[x1, x2], y=[y1, y2], mode='lines', line=dict(color=color, width=3.5), showlegend=False, hoverinfo='skip'))
                                 
-                                # ÉLETVOLAL KIRAJZOLÁSA A KÁRTYÁRA
+                                # ÉLETVONAL KIRAJZOLÁSA
                                 if card_surv_val > 0:
                                     fig_card.add_hline(y=card_surv_val, line_dash="solid", line_color="#4B5563", line_width=2.5)
 
-                                # CÉLKITŰZÉS KIRAJZOLÁSA A KÁRTYÁRA
+                                # CÉLKITŰZÉS KIRAJZOLÁSA
                                 if card_goal_type != "Nincs" and card_calc_goal > 0:
                                     fig_card.add_hline(y=card_calc_goal, line_dash="dash", line_color="#C5A059", line_width=2)
 
