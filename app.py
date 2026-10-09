@@ -396,52 +396,43 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         key=f"goal_val_{selected_stat}_{indiv_agg}",
     )
 
-    # ITT MENTJÜK A BEÁLLÍTÁSOKAT BIZTOSAN A SESSION STATE-BE ÉS JSON-BA
-    if st.sidebar.button(
-        "💾 Beállítások Mentése", key=f"save_btn_{selected_stat}"
-    ):
-      if "settings" not in st.session_state.db:
-        st.session_state.db["settings"] = {}
-      if selected_stat not in st.session_state.db["settings"]:
-        st.session_state.db["settings"][selected_stat] = {}
+    # --- AZONNALI AUTOMATIKUS MENTÉS BÁRMILYEN BEÁLLÍTÁS VÁLTOZÁSAKOR ---
+    if "settings" not in st.session_state.db:
+      st.session_state.db["settings"] = {}
+    if selected_stat not in st.session_state.db["settings"]:
+      st.session_state.db["settings"][selected_stat] = {}
 
-      st.session_state.db["settings"][selected_stat][
-          "person_name"
-      ] = person_name
-      st.session_state.db["settings"][selected_stat][
-          "person_post"
-      ] = person_post
-      st.session_state.db["settings"][selected_stat][
-          "chart_height"
-      ] = chart_height
-      st.session_state.db["settings"][selected_stat]["margin_l"] = margin_l
-      st.session_state.db["settings"][selected_stat]["margin_r"] = margin_r
-      st.session_state.db["settings"][selected_stat]["margin_t"] = margin_t
-      st.session_state.db["settings"][selected_stat]["margin_b"] = margin_b
-      st.session_state.db["settings"][selected_stat][
-          "show_acc_in_brackets"
-      ] = show_acc_in_brackets
-      st.session_state.db["settings"][selected_stat][
-          "initial_accumulated_val"
-      ] = initial_accumulated_val
+    st.session_state.db["settings"][selected_stat]["person_name"] = person_name
+    st.session_state.db["settings"][selected_stat]["person_post"] = person_post
+    st.session_state.db["settings"][selected_stat][
+        "chart_height"
+    ] = chart_height
+    st.session_state.db["settings"][selected_stat]["margin_l"] = margin_l
+    st.session_state.db["settings"][selected_stat]["margin_r"] = margin_r
+    st.session_state.db["settings"][selected_stat]["margin_t"] = margin_t
+    st.session_state.db["settings"][selected_stat]["margin_b"] = margin_b
+    st.session_state.db["settings"][selected_stat][
+        "show_acc_in_brackets"
+    ] = show_acc_in_brackets
+    st.session_state.db["settings"][selected_stat][
+        "initial_accumulated_val"
+    ] = initial_accumulated_val
 
-      st.session_state.db["settings"][selected_stat][indiv_agg] = {
-          "ymin": ymin,
-          "ymax": ymax,
-          "ystep": ystep,
-          "survival_type": survival_type,
-          "survival_value": survival_value,
-          "show_survival": show_survival_line,
-          "goal_type": goal_type,
-          "goal_val_target": goal_value,
-      }
+    st.session_state.db["settings"][selected_stat][indiv_agg] = {
+        "ymin": ymin,
+        "ymax": ymax,
+        "ystep": ystep,
+        "survival_type": survival_type,
+        "survival_value": survival_value,
+        "show_survival": show_survival_line,
+        "goal_type": goal_type,
+        "goal_val_target": goal_value,
+    }
 
-      st.session_state.db["stats"][selected_stat][
-          "inverted"
-      ] = is_stat_inverted_check
-      save_data(st.session_state.db)
-      st.sidebar.success(f"Beállítások elmentve ({indiv_agg})!")
-      st.rerun()
+    st.session_state.db["stats"][selected_stat][
+        "inverted"
+    ] = is_stat_inverted_check
+    save_data(st.session_state.db)
 
     # --- GRAFIKON NÉZET ---
     components.html(
@@ -788,7 +779,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         else:
           yaxis_dict["rangemode"] = "tozero"
 
-        # A legelső pont pontosan a bal szélről indul
         xaxis_range = [0, max(unique_x) + 0.5] if len(unique_x) > 1 else [0, 0.5]
 
         layout_args = dict(
@@ -1177,7 +1167,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
 
 # 3. ÖSSZESÍTŐ DASHBOARD
 elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
-  st.title("📋 Teljesítnémérő Statisztikák Dashboard")
+  st.title("📋 Teljesítménymérő Statisztikák Dashboard")
 
   all_groups = db.get(
       "groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
@@ -1422,7 +1412,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                 st.info("Nincs megjeleníthető adat.")
 
 # 4. ÚJ STATISZTIKA LÉTREHOZÁSA
-elif selected_menu == "➕ Új Statisztika Létrehozása":
+elif selected_menu == "➕ Új Statisztika Kategória Létrehozása":
   st.title("➕ Új Statisztika Kategória Létrehozása")
   st.write(
       "Itt hozhatsz létre új adatsort és sorolhatod be a megfelelő részlegbe."
@@ -1550,3 +1540,4 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
         st.rerun()
     else:
       st.info("Az archívum üres.")
+        
