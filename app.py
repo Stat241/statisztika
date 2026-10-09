@@ -779,8 +779,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         else:
           yaxis_dict["rangemode"] = "tozero"
 
+        # Itt történt a javítás: -0.6-ról indul a tengely, hogy a legelső dátum se lógjon le
         xaxis_range = (
-            [0, max(unique_x) + 0.6] if len(unique_x) > 1 else [0, 0.5]
+            [-0.6, max(unique_x) + 0.6] if len(unique_x) > 1 else [-0.5, 0.5]
         )
 
         layout_args = dict(
@@ -1414,7 +1415,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                 st.info("Nincs megjeleníthető adat.")
 
 # 4. ÚJ STATISZTIKA LÉTREHOZÁSA
-elif selected_menu == "➕ Új Statisztika Létrehozása":
+elif selected_menu == "➕ Új Statisztika Kategória Létrehozása":
   st.title("➕ Új Statisztika Kategória Létrehozása")
   st.write(
       "Itt hozhatsz létre új adatsort és sorolhatod be a megfelelő részlegbe."
