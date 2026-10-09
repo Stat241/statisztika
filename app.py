@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 # ================= OLDAL ALAPBEÁLLÍTÁSAI =================
 st.set_page_config(page_title="Statisztika Kezelő Rendszer", layout="wide", page_icon="📊")
 
-# ================= NYOMTATÁSI CSS (PONTOSAN 100% SZÉLESSÉG & MARGÓ NULLÁZÁS) =================
+# ================= NYOMTATÁSI CSS (OPTIMÁLIS 1 OLDALAS A4 FEKVŐ) =================
 st.markdown("""
     <style>
     @media print {
@@ -18,7 +18,7 @@ st.markdown("""
             margin: 0mm !important;
         }
         
-        /* Felesleges elemek teljes elrejtése */
+        /* Felesleges elemek elrejtése */
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -31,7 +31,7 @@ st.markdown("""
             display: none !important;
         }
         
-        /* Konténerek kényszerítése pontosan 100%-ra, margók nélkül */
+        /* Strict 1 oldalas kényszerítés */
         html, body, [data-testid="stAppViewContainer"], .main, .block-container, [data-testid="stVerticalBlock"], .stTabs, [data-testid="stTabContent"] {
             width: 100% !important;
             max-width: 100% !important;
@@ -45,11 +45,11 @@ st.markdown("""
             page-break-inside: avoid !important;
         }
         
-        /* Grafikon pontos illesztése */
+        /* Grafikon teljes kitöltése margók nélkül */
         .stPlotlyChart, .js-plotly-plot, .plot-container {
             width: 100% !important;
             max-width: 100% !important;
-            height: 98vh !important;
+            height: 100vh !important;
             margin: 0 !important;
             padding: 0 !important;
             page-break-inside: avoid !important;
@@ -568,7 +568,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             xanchor="center", yanchor="bottom"
                         )
 
-                    # NÉV ÉS POSZT ANNOTÁCIÓK A BAL SZÉLEN (HIBAMENTES PLOTLY KOORDINÁTÁK)
+                    # NÉV ÉS POSZT ANNOTÁCIÓK A BAL SZÉLEN
                     if person_name:
                         fig.add_annotation(
                             xref="paper", yref="paper", x=0.0, y=1.20,
@@ -606,6 +606,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     xaxis_range = [-0.3, max(unique_x) + 0.3] if len(unique_x) > 1 else [-0.5, 0.5]
 
+                    # OPTIMALIZÁLT MARGÓK ÉS TÉRKÖZÖK (NEM VÁGODIK LE A JOBB OLDAL SEM)
                     layout_args = dict(
                         title=dict(
                             text=f"<b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
@@ -615,7 +616,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         plot_bgcolor="white", paper_bgcolor="white",
                         autosize=True,
                         height=620,
-                        margin=dict(t=160, b=120, l=80, r=40),
+                        margin=dict(t=130, b=100, l=50, r=30),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
                             tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
@@ -950,4 +951,3 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                 st.rerun()
         else:
             st.info("Az archívum üres.")
-            
