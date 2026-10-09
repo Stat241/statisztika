@@ -887,7 +887,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
               yref="paper",
               x=1.0,
               y=1.08,
-              text=f"🎯 Cél: {goal_fmt}",
+              text=f"Cél: {goal_fmt}",
               showarrow=False,
               align="right",
               xanchor="right",
