@@ -1403,7 +1403,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
       dash_period = st.radio(
           "📅 Időszaki Bontás A Dashboardon:",
           [
-              "Nyers / Napi adatok",
+              "Napi adatok",
               "Heti (Cs 14:00)",
               "Havi összesítés",
               "Éves összesítés",
@@ -1559,9 +1559,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
             card_chart_type = "Vonaldiagram"
 
             m_lookup_key = (
-                dash_period
-                if dash_period != "Nyers / Napi adatok"
-                else "Napi adatok"
+                dash_period if dash_period != "Napi adatok" else "Napi adatok"
             )
             if m_lookup_key in s_settings:
               m_dict = s_settings[m_lookup_key]
@@ -1876,7 +1874,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
 
   st.markdown("---")
 
-  # --- 2. FELHASZNÁLÓK ÉS JOGOSULTSÁGOK KEZELÉSE ---
+  # --- 2. FELHASZNÁLÓK ÉS JOGOSULTSÁGok KEZELÉSE ---
   st.subheader("👥 Felhasználók & Jogosultságok Kezelése")
 
   col_u_add, col_u_edit = st.columns(2)
