@@ -618,8 +618,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
 
-                    # BŐVÍTETT KIFUTÁSI TARTOMÁNY (A JOBB OLDALI LEVÁGÁS ELLEN)
-                    xaxis_range = [-0.4, max(unique_x) + 0.8] if len(unique_x) > 1 else [-0.6, 0.6]
+                    # X-TARTOMÁNY: AZ ELSŐ PONT PONTOSAN A Y-TENGELYNÉL (0-NÁL) KEZDŐDIK
+                    xaxis_range = [0, max(unique_x) + 0.7] if len(unique_x) > 1 else [0, 0.6]
 
                     # DINAMIKUS MARGÓK ÉS MAGASSÁG HASZNÁLATA
                     layout_args = dict(
