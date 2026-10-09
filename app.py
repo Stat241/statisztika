@@ -309,15 +309,29 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 if st.form_submit_button("Adat Hozzáadása"):
                     full_dt_str = f"{input_date.strftime('%Y-%m-%d')} {input_time.strftime('%H:%M')}"
                     db["stats"][selected_stat]["data"].append([full_dt_str, input_val, input_note])
+                    # Automatikus időrendbe rendezés mentés előtt
+                    db["stats"][selected_stat]["data"] = sorted(
+                        db["stats"][selected_stat]["data"], 
+                        key=lambda x: pd.to_datetime(str(x[0]), format="mixed", errors="coerce")
+                    )
                     save_data(db)
                     st.rerun()
 
             st.markdown("---")
-            st.subheader("📋 Adat-táblázat (Dupla kattintással szerkeszthető)")
+            st.subheader("📋 Adat-táblázat (Időrendbe rendezve)")
             
             stat_data_raw = db["stats"][selected_stat]["data"]
             
             if stat_data_raw:
+                # Automatikus időrendi rendezés megjelenítés előtt
+                try:
+                    stat_data_raw = sorted(
+                        stat_data_raw, 
+                        key=lambda x: pd.to_datetime(str(x[0]), format="mixed", errors="coerce")
+                    )
+                except Exception:
+                    pass
+
                 table_rows = []
                 for item in stat_data_raw:
                     dt_str = str(item[0]).strip()
@@ -364,6 +378,12 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         n_val = str(row["Megjegyzés"]).strip() if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan" else ""
                         updated_data.append([full_dt, v_val, n_val])
                 
+                # Időrendbe rendezés az adatok frissítésekor
+                updated_data = sorted(
+                    updated_data, 
+                    key=lambda x: pd.to_datetime(str(x[0]), format="mixed", errors="coerce")
+                )
+
                 if updated_data != stat_data_raw:
                     db["stats"][selected_stat]["data"] = updated_data
                     save_data(db)
@@ -618,8 +638,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
 
-                    # X-TARTOMÁNY: AZ ELSŐ PONT PONTOSAN A Y-TENGELYNÉL (0-NÁL) KEZDŐDIK
-                    xaxis_range = [0, max(unique_x) + 0.7] if len(unique_x) > 1 else [0, 0.6]
+                    # X-TARTOMÁNY: Enyhe bal margó (-0.3) az első pont egészben tartásához, jobb oldal kitűnő illesztéséhez
+                    xaxis_range = [-0.3, max(unique_x) + 0.7] if len(unique_x) > 1 else [-0.5, 0.5]
 
                     # DINAMIKUS MARGÓK ÉS MAGASSÁG HASZNÁLATA
                     layout_args = dict(
