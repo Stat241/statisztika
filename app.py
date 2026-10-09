@@ -690,6 +690,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         res_df = (
             df_temp.groupby("Period_Month")
             .agg({
+                "Sort_Key": "min",
                 "Érték": "sum",
                 "Megjegyzés": lambda x: " | ".join(
                     [str(n) for n in x if n and str(n).strip()]
@@ -701,12 +702,13 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         raw_items = []
         for idx, row in res_df.iterrows():
-          d_str = row["Period_Month"].strftime("%Y-%m-%d")
+          m_dt = row["Period_Month"]
+          d_str = m_dt.strftime("%Y-%m-%d")
           raw_items.append({
               "x": len(raw_items),
               "date_str": d_str,
-              "label": row["Period_Month"].strftime("%Y. %m. %d."),
-              "hover_label": row["Period_Month"].strftime("%Y. %m. %d."),
+              "label": m_dt.strftime("%Y. %m."),
+              "hover_label": m_dt.strftime("%Y. %m. hó"),
               "val": float(row["Érték"]),
               "note": row["Megjegyzés"],
           })
