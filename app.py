@@ -779,10 +779,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         else:
           yaxis_dict["rangemode"] = "tozero"
 
-        # Optimális margó a bal szélen (-0.3, hogy a legelső dátum se lógjon le, de ne is legyen túl távol)
-        xaxis_range = (
-            [-0.3, max(unique_x) + 0.5] if len(unique_x) > 1 else [-0.3, 0.5]
-        )
+        # A legelső pont pontosan a bal szélen (0-tól) indul
+        xaxis_range = [0, max(unique_x) + 0.5] if len(unique_x) > 1 else [0, 0.5]
 
         layout_args = dict(
             title=dict(
