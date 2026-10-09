@@ -586,9 +586,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         if item['note']: h_txt += f"<br>Megjegyzés: {item['note']}"
                         hover_texts.append(h_txt)
 
+                    # CLIPONAXIS=FALSE A TRACE SZINTEN (TELI KÖRÖK A SZÉLEKEN IS)
                     fig.add_trace(go.Scatter(
                         x=x_numeric, y=y_vals, mode='markers',
                         marker=dict(size=16, color="#1E293B"),
+                        cliponaxis=False,
                         hovertext=hover_texts, hoverinfo='text', showlegend=False
                     ))
 
@@ -723,7 +725,8 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
                     x=x_idx_current, y=y_vals, mode='lines+markers',
                     name=stat_name, customdata=orig_dates,
                     hovertemplate="<b>%{fullData.name}</b><br>Sorszám: %{x}.<br><b>Dátum: %{customdata}</b><br>Érték: %{text}<extra></extra>",
-                    text=formatted_texts, line=dict(color=trace_color, width=5), marker=dict(size=12, color=trace_color)
+                    text=formatted_texts, line=dict(color=trace_color, width=5), marker=dict(size=12, color=trace_color),
+                    cliponaxis=False
                 ))
                 
                 for x_val, y_val, txt, d_str in zip(x_idx_current, y_vals, formatted_texts, orig_dates):
@@ -828,7 +831,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                 x_fmt = [pd.to_datetime(str(item[0]), format="mixed", errors="coerce").strftime("%b %d") for item in card_items]
                                 hover_c = [f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}" if n else f"Dátum: {dt}<br>Érték: {txt}" for dt, txt, n in zip(x_fmt, formatted_t, c_notes)]
 
-                                fig_card.add_trace(go.Scatter(x=x_num, y=card_y, mode='markers', marker=dict(size=8, color="#1E293B"), hovertext=hover_c, hoverinfo='text', showlegend=False))
+                                fig_card.add_trace(go.Scatter(x=x_num, y=card_y, mode='markers', marker=dict(size=8, color="#1E293B"), cliponaxis=False, hovertext=hover_c, hoverinfo='text', showlegend=False))
                                 
                                 for x_val, y_val, txt in zip(x_num, card_y, formatted_t):
                                     fig_card.add_annotation(
