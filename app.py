@@ -143,6 +143,7 @@ def load_data():
               "unit": "Ft",
               "group": "Pénzügy",
               "inverted": False,
+              "description": "Az adott időszakban a bankszámlára beérkezett bruttó összegek kötelezettségek és jóváírások alapján.",
               "data": [
                   ["2026-07-23 14:00", 650000, "Nyitó kampány"],
                   ["2026-07-30 14:00", 97500, ""],
@@ -161,6 +162,7 @@ def load_data():
               "unit": "fő",
               "group": "Értékesítés",
               "inverted": False,
+              "description": "Az aktív szerződéssel rendelkező új és visszatérő ügyfelek száma.",
               "data": [
                   ["2026-08-08 14:00", 5, "Első körös hívások"],
                   ["2026-08-15 14:00", 12, ""],
@@ -366,6 +368,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     stat_group = db["stats"][selected_stat].get("group", "Egyéb")
     stat_settings = db.get("settings", {}).get(selected_stat, {})
     is_inverted = db["stats"][selected_stat].get("inverted", False)
+    stat_desc = db["stats"][selected_stat].get("description", "")
 
     if st.session_state.user_role == "admin":
       person_name = st.sidebar.text_input(
@@ -583,6 +586,10 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         """,
         height=50,
     )
+
+    # LEÍRÁS MEGJELENÍTÉSE
+    if stat_desc:
+      st.info(f"ℹ️ **Útmutató a statisztikához:** {stat_desc}")
 
     stat_data_raw = db["stats"][selected_stat]["data"]
 
@@ -1694,6 +1701,13 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
     )
     new_stat_unit = st.text_input("Mértékegység:", placeholder="pl. Ft, db, fő")
     new_stat_group = st.selectbox("Csoport / Részleg:", options=all_groups)
+    new_stat_desc = st.text_area(
+        "Leírás / Útmutató (mit kell ide rögzíteni):",
+        placeholder=(
+            "Írd le pontosan, hogy mikor, mit és hogyan kell felvinni ebben a"
+            " statisztikában..."
+        ),
+    )
     is_new_inverted = st.checkbox(
         "Fordított statisztika (a 0 felül van és lefelé nő)"
     )
@@ -1706,6 +1720,7 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
               "unit": new_stat_unit,
               "group": new_stat_group,
               "inverted": is_new_inverted,
+              "description": new_stat_desc,
               "data": [],
           }
           save_data(st.session_state.db)
@@ -1720,7 +1735,57 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
 elif selected_menu == "⚙️ Adminisztráció & Archívum":
   st.title("⚙️ Rendszer Adminisztráció")
 
-  # --- 1. FELHASZNÁLÓK ÉS JOGOSULTSÁGOK KEZELÉSE ---
+  # --- 1. MEGLÉVŐ STATISZTIKÁK LEÍRÁSÁNAK / BEÁLLÍTÁSAINAK MÓDOSÍTÁSA ---
+  st.subheader("✏️ Statisztika Beállítások & Leírás Módosítása")
+  selected_edit_stat = st.selectbox(
+      "Válassz statisztikát a módosításhoz:",
+      options=all_stat_names,
+      key="admin_edit_stat_select",
+  )
+
+  if selected_edit_stat:
+    curr_stat_obj = st.session_state.db["stats"][selected_edit_stat]
+    with st.form("edit_stat_info_form"):
+      updated_group = st.selectbox(
+          "Csoport / Részleg:",
+          options=all_groups,
+          index=all_groups.index(curr_stat_obj.get("group", all_groups[0]))
+          if curr_stat_obj.get("group") in all_groups
+          else 0,
+      )
+      updated_unit = st.text_input(
+          "Mértékegység:", value=curr_stat_obj.get("unit", "")
+      )
+      updated_desc = st.text_area(
+          "Leírás / Útmutató (mit kell ide rögzíteni):",
+          value=curr_stat_obj.get("description", ""),
+      )
+      updated_inverted = st.checkbox(
+          "Fordított statisztika (a 0 felül van)",
+          value=curr_stat_obj.get("inverted", False),
+      )
+
+      save_stat_info_btn = st.form_submit_button(
+          "💾 Statisztika Adatainak Mentése"
+      )
+      if save_stat_info_btn:
+        st.session_state.db["stats"][selected_edit_stat][
+            "group"
+        ] = updated_group
+        st.session_state.db["stats"][selected_edit_stat]["unit"] = updated_unit
+        st.session_state.db["stats"][selected_edit_stat][
+            "description"
+        ] = updated_desc
+        st.session_state.db["stats"][selected_edit_stat][
+            "inverted"
+        ] = updated_inverted
+        save_data(st.session_state.db)
+        st.success(f"'{selected_edit_stat}' beállításai frissítve!")
+        st.rerun()
+
+  st.markdown("---")
+
+  # --- 2. FELHASZNÁLÓK ÉS JOGOSULTSÁGOK KEZELÉSE ---
   st.subheader("👥 Felhasználók & Jogosultságok Kezelése")
 
   col_u_add, col_u_edit = st.columns(2)
@@ -1814,7 +1879,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
 
   st.markdown("---")
 
-  # --- 2. STATISZTIKA MEGERŐSÍTÉSES TÖRLESE ---
+  # --- 3. STATISZTIKA MEGERŐSÍTÉSES TÖRLESE ---
   st.subheader("🗑️ Statisztika kategória végleges törlése")
   stat_to_delete_cat = st.selectbox(
       "Törlendő statisztika kategória:",
@@ -1866,7 +1931,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
 
   st.markdown("---")
 
-  # --- 3. CSOPORTOK KEZELÉSE ---
+  # --- 4. CSOPORTOK KEZELÉSE ---
   st.subheader("📁 Csoportok / Részlegek Kezelése")
   col_g1, col_g2 = st.columns(2)
   with col_g1:
@@ -1878,7 +1943,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
       ):
         st.session_state.db["groups"].append(new_group_name)
         save_data(st.session_state.db)
-        St.success(f"'{new_group_name}' sikeresen létrehozva!")
+        st.success(f"'{new_group_name}' sikeresen létrehozva!")
         st.rerun()
       else:
         st.warning("Add meg a nevet vagy már létezik ilyen részleg!")
@@ -1910,7 +1975,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
 
   st.markdown("---")
 
-  # --- 4. ARCHÍVUM KEZELÉSE ---
+  # --- 5. ARCHÍVUM KEZELÉSE ---
   st.subheader("📂 Archívum kezelése")
   archive_db = load_archive()
 
