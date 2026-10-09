@@ -209,7 +209,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         stat_settings = db.get("settings", {}).get(selected_stat, {})
         is_inverted = db["stats"][selected_stat].get("inverted", False)
 
-        # Session State inicializálása a mentett értékekkel (biztosítja, hogy a beállítások megmaradjanak)
         if f"pname_{selected_stat}" not in st.session_state:
             st.session_state[f"pname_{selected_stat}"] = stat_settings.get("person_name", "Bíró Laura")
         if f"ppost_{selected_stat}" not in st.session_state:
@@ -812,19 +811,21 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     p_post = s_settings.get("person_post", "")
                     assigned_str = f"{p_name} ({p_post})" if p_name or p_post else "Nincs megadva"
                     
-                    card_surv_val = s_settings.get("survival_value", s_settings.get("goal_value", 0.0))
-                    card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
+                    # --- ÉLETVOLAL ÉS CÉL KIOLVASÁSA A DASHBOARDHOZ ---
+                    card_mode_settings = s_settings.get("Napi adatok", {})
+                    card_surv_val = float(card_mode_settings.get("survival_value", 0.0)) if card_mode_settings.get("show_survival", True) else 0.0
                     
-                    if s_settings.get("is_accumulated", False) and card_items:
-                        base_v = float(s_settings.get("initial_accumulated_val", 0.0))
-                        acc_card_items = []
-                        running_tot = base_v
-                        for item in card_items:
-                            running_tot += float(item[1])
-                            acc_card_items.append([item[0], running_tot, item[2] if len(item)>2 else ""])
-                        card_items = acc_card_items
-
+                    card_goal_type = card_mode_settings.get("goal_type", "Nincs")
+                    card_goal_target = float(card_mode_settings.get("goal_val_target", 0.0))
+                    
+                    card_items = sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
                     card_y = [item[1] for item in card_items] if card_items else []
+                    
+                    card_calc_goal = 0.0
+                    if card_goal_type == "Fix érték (db/Ft)":
+                        card_calc_goal = card_goal_target
+                    elif card_goal_type == "Százalékos növekedés (%)" and len(card_y) > 0:
+                        card_calc_goal = card_y[-1] * (1 + card_goal_target / 100)
                     
                     condition_text, condition_color = calculate_stat_condition(s_data_raw, card_surv_val)
                     
@@ -853,8 +854,13 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                     color = "#00C853" if (y2 < y1 if s_inverted else y2 > y1) else "#FF1744"
                                     fig_card.add_trace(go.Scatter(x=[x1, x2], y=[y1, y2], mode='lines', line=dict(color=color, width=3.5), showlegend=False, hoverinfo='skip'))
                                 
+                                # ÉLETVOLAL KIRAJZOLÁSA A KÁRTYÁRA
                                 if card_surv_val > 0:
-                                    fig_card.add_hline(y=card_surv_val, line_dash="dash", line_color="#4B5563", line_width=2)
+                                    fig_card.add_hline(y=card_surv_val, line_dash="solid", line_color="#4B5563", line_width=2.5)
+
+                                # CÉLKITŰZÉS KIRAJZOLÁSA A KÁRTYÁRA
+                                if card_goal_type != "Nincs" and card_calc_goal > 0:
+                                    fig_card.add_hline(y=card_calc_goal, line_dash="dash", line_color="#C5A059", line_width=2)
 
                                 formatted_t = [fmt_num(y, s_unit) for y in card_y]
                                 x_fmt = [pd.to_datetime(str(item[0]), format="mixed", errors="coerce").strftime("%b %d") for item in card_items]
