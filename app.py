@@ -476,8 +476,21 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
     mode_settings = stat_settings.get(indiv_agg, {})
     valid_goals = ["Nincs", "Fix érték (db/Ft)"]
+    valid_chart_types = ["Vonaldiagram", "Oszlopdiagram (Bar)"]
 
     if st.session_state.user_role == "admin":
+      st.sidebar.markdown("---")
+      st.sidebar.subheader(f"📊 Diagram Típusa ({indiv_agg})")
+      chart_type_val = mode_settings.get("chart_type", "Vonaldiagram")
+      chart_type = st.sidebar.selectbox(
+          "Diagram formátuma:",
+          valid_chart_types,
+          index=valid_chart_types.index(chart_type_val)
+          if chart_type_val in valid_chart_types
+          else 0,
+          key=f"chart_type_{selected_stat}_{indiv_agg}",
+      )
+
       st.sidebar.markdown("---")
       st.sidebar.subheader(f"📐 Skála Tengely Beállítások ({indiv_agg})")
       col_min, col_max, col_step = st.sidebar.columns(3)
@@ -572,6 +585,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
       ] = initial_accumulated_val
 
       st.session_state.db["settings"][selected_stat][indiv_agg] = {
+          "chart_type": chart_type,
           "ymin": ymin,
           "ymax": ymax,
           "ystep": ystep,
@@ -586,6 +600,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
       ] = is_stat_inverted_check
       save_data(st.session_state.db)
     else:
+      chart_type = mode_settings.get("chart_type", "Vonaldiagram")
       ymin = str(mode_settings.get("ymin", ""))
       ymax = str(mode_settings.get("ymax", ""))
       ystep = str(mode_settings.get("ystep", ""))
@@ -802,34 +817,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         y_vals = [item["val"] for item in raw_items]
         notes = [item["note"] for item in raw_items]
 
-        for i in range(len(raw_items) - 1):
-          x1, y1 = x_numeric[i], y_vals[i]
-          x2, y2 = x_numeric[i + 1], y_vals[i + 1]
-
-          if is_stat_inverted_check:
-            color = "#00C853" if y2 < y1 else "#FF1744"
-          else:
-            color = "#00C853" if y2 > y1 else "#FF1744"
-
-          fig.add_trace(
-              go.Scatter(
-                  x=[x1, x2],
-                  y=[y1, y2],
-                  mode="lines",
-                  line=dict(color=color, width=6),
-                  showlegend=False,
-                  hoverinfo="skip",
-              )
-          )
-
-        if show_survival_line and calc_survival_val > 0:
-          fig.add_hline(
-              y=calc_survival_val,
-              line_dash="solid",
-              line_color="#4B5563",
-              line_width=4,
-          )
-
         formatted_texts = []
         for idx, val in enumerate(y_vals):
           v_str = fmt_num(val, current_unit)
@@ -855,18 +842,70 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             h_txt += f"<br>Megjegyzés: {item['note']}"
           hover_texts.append(h_txt)
 
-        fig.add_trace(
-            go.Scatter(
-                x=x_numeric,
-                y=y_vals,
-                mode="markers",
-                marker=dict(size=16, color="#1E293B"),
-                cliponaxis=False,
-                hovertext=hover_texts,
-                hoverinfo="text",
-                showlegend=False,
+        if chart_type == "Oszlopdiagram (Bar)":
+          bar_colors = []
+          for i, y_val in enumerate(y_vals):
+            if i == 0:
+              bar_colors.append("#00C853")
+            else:
+              prev_y = y_vals[i - 1]
+              if is_stat_inverted_check:
+                c = "#00C853" if y_val < prev_y else "#FF1744"
+              else:
+                c = "#00C853" if y_val > prev_y else "#FF1744"
+              bar_colors.append(c)
+
+          fig.add_trace(
+              go.Bar(
+                  x=x_numeric,
+                  y=y_vals,
+                  marker=dict(color=bar_colors),
+                  hovertext=hover_texts,
+                  hoverinfo="text",
+                  showlegend=False,
+              )
+          )
+        else:
+          for i in range(len(raw_items) - 1):
+            x1, y1 = x_numeric[i], y_vals[i]
+            x2, y2 = x_numeric[i + 1], y_vals[i + 1]
+
+            if is_stat_inverted_check:
+              color = "#00C853" if y2 < y1 else "#FF1744"
+            else:
+              color = "#00C853" if y2 > y1 else "#FF1744"
+
+            fig.add_trace(
+                go.Scatter(
+                    x=[x1, x2],
+                    y=[y1, y2],
+                    mode="lines",
+                    line=dict(color=color, width=6),
+                    showlegend=False,
+                    hoverinfo="skip",
+                )
             )
-        )
+
+          fig.add_trace(
+              go.Scatter(
+                  x=x_numeric,
+                  y=y_vals,
+                  mode="markers",
+                  marker=dict(size=16, color="#1E293B"),
+                  cliponaxis=False,
+                  hovertext=hover_texts,
+                  hoverinfo="text",
+                  showlegend=False,
+              )
+          )
+
+        if show_survival_line and calc_survival_val > 0:
+          fig.add_hline(
+              y=calc_survival_val,
+              line_dash="solid",
+              line_color="#4B5563",
+              line_width=4,
+          )
 
         for idx, (x_val, y_val, txt) in enumerate(
             zip(x_numeric, y_vals, formatted_texts)
@@ -973,7 +1012,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
           except Exception:
             pass
 
-        xaxis_range = [0, max(unique_x) + 0.5] if len(unique_x) > 1 else [0, 0.5]
+        xaxis_range = [-0.5, max(unique_x) + 0.5] if len(unique_x) > 1 else [-0.5, 0.5]
 
         layout_args = dict(
             title=dict(
@@ -1515,6 +1554,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
             card_surv_val = 0.0
             card_goal_type = "Nincs"
             card_goal_target = 0.0
+            card_chart_type = "Vonaldiagram"
 
             m_lookup_key = (
                 dash_period
@@ -1523,6 +1563,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
             )
             if m_lookup_key in s_settings:
               m_dict = s_settings[m_lookup_key]
+              card_chart_type = m_dict.get("chart_type", "Vonaldiagram")
               if m_dict.get("show_survival", True) and float(
                   m_dict.get("survival_value", 0.0)
               ) > 0:
@@ -1574,42 +1615,6 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                   c_notes = [
                       item[2] if len(item) > 2 else "" for item in card_items
                   ]
-
-                  for k in range(len(card_items) - 1):
-                    x1, y1 = x_num[k], card_y[k]
-                    x2, y2 = x_num[k + 1], card_y[k + 1]
-                    color = (
-                        "#00C853"
-                        if (y2 < y1 if s_inverted else y2 > y1)
-                        else "#FF1744"
-                    )
-                    fig_card.add_trace(
-                        go.Scatter(
-                            x=[x1, x2],
-                            y=[y1, y2],
-                            mode="lines",
-                            line=dict(color=color, width=3.5),
-                            showlegend=False,
-                            hoverinfo="skip",
-                        )
-                    )
-
-                  if card_surv_val > 0:
-                    fig_card.add_hline(
-                        y=card_surv_val,
-                        line_dash="solid",
-                        line_color="#4B5563",
-                        line_width=2.5,
-                    )
-
-                  if card_goal_type != "Nincs" and card_calc_goal > 0:
-                    fig_card.add_hline(
-                        y=card_calc_goal,
-                        line_dash="dash",
-                        line_color="#C5A059",
-                        line_width=2,
-                    )
-
                   formatted_t = [fmt_num(y, s_unit) for y in card_y]
 
                   x_fmt = []
@@ -1636,18 +1641,77 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                       for dt, txt, n in zip(x_fmt, formatted_t, c_notes)
                   ]
 
-                  fig_card.add_trace(
-                      go.Scatter(
-                          x=x_num,
-                          y=card_y,
-                          mode="markers",
-                          marker=dict(size=8, color="#1E293B"),
-                          cliponaxis=False,
-                          hovertext=hover_c,
-                          hoverinfo="text",
-                          showlegend=False,
+                  if card_chart_type == "Oszlopdiagram (Bar)":
+                    c_bar_colors = []
+                    for k, y_val in enumerate(card_y):
+                      if k == 0:
+                        c_bar_colors.append("#00C853")
+                      else:
+                        prev_y = card_y[k - 1]
+                        if s_inverted:
+                          c = "#00C853" if y_val < prev_y else "#FF1744"
+                        else:
+                          c = "#00C853" if y_val > prev_y else "#FF1744"
+                        c_bar_colors.append(c)
+
+                    fig_card.add_trace(
+                        go.Bar(
+                            x=x_num,
+                            y=card_y,
+                            marker=dict(color=c_bar_colors),
+                            hovertext=hover_c,
+                            hoverinfo="text",
+                            showlegend=False,
+                        )
+                    )
+                  else:
+                    for k in range(len(card_items) - 1):
+                      x1, y1 = x_num[k], card_y[k]
+                      x2, y2 = x_num[k + 1], card_y[k + 1]
+                      color = (
+                          "#00C853"
+                          if (y2 < y1 if s_inverted else y2 > y1)
+                          else "#FF1744"
                       )
-                  )
+                      fig_card.add_trace(
+                          go.Scatter(
+                              x=[x1, x2],
+                              y=[y1, y2],
+                              mode="lines",
+                              line=dict(color=color, width=3.5),
+                              showlegend=False,
+                              hoverinfo="skip",
+                          )
+                      )
+
+                    fig_card.add_trace(
+                        go.Scatter(
+                            x=x_num,
+                            y=card_y,
+                            mode="markers",
+                            marker=dict(size=8, color="#1E293B"),
+                            cliponaxis=False,
+                            hovertext=hover_c,
+                            hoverinfo="text",
+                            showlegend=False,
+                        )
+                    )
+
+                  if card_surv_val > 0:
+                    fig_card.add_hline(
+                        y=card_surv_val,
+                        line_dash="solid",
+                        line_color="#4B5563",
+                        line_width=2.5,
+                    )
+
+                  if card_goal_type != "Nincs" and card_calc_goal > 0:
+                    fig_card.add_hline(
+                        y=card_calc_goal,
+                        line_dash="dash",
+                        line_color="#C5A059",
+                        line_width=2,
+                    )
 
                   for x_val, y_val, txt in zip(x_num, card_y, formatted_t):
                     fig_card.add_annotation(
@@ -1682,6 +1746,8 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                   else:
                     yaxis_card["rangemode"] = "tozero"
 
+                  xaxis_card_range = [-0.5, max(x_num) + 0.5] if len(x_num) > 1 else [-0.5, 0.5]
+
                   fig_card.update_layout(
                       height=300,
                       plot_bgcolor="white",
@@ -1702,6 +1768,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                           linecolor="#000",
                           linewidth=1.5,
                           mirror=True,
+                          range=xaxis_card_range,
                       ),
                       yaxis=yaxis_card,
                   )
