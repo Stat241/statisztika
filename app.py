@@ -444,7 +444,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     )
 
     mode_settings = stat_settings.get(indiv_agg, {})
-    valid_surv = ["Nincs", "Fix érték (db/Ft)"]
     valid_goals = ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"]
 
     if st.session_state.user_role == "admin":
@@ -486,15 +485,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
       st.sidebar.markdown("---")
       st.sidebar.subheader(f"🛡️ Életvonal ({indiv_agg})")
-      surv_type_val = mode_settings.get("survival_type", "Nincs")
-      survival_type = st.sidebar.selectbox(
-          "Életvonal típusa:",
-          valid_surv,
-          index=valid_surv.index(surv_type_val)
-          if surv_type_val in valid_surv
-          else 0,
-          key=f"surv_type_{selected_stat}_{indiv_agg}",
-      )
       survival_value = st.sidebar.number_input(
           "Életvonal értéke:",
           value=float(mode_settings.get("survival_value", 0.0)),
@@ -554,7 +544,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
           "ymin": ymin,
           "ymax": ymax,
           "ystep": ystep,
-          "survival_type": survival_type,
           "survival_value": survival_value,
           "show_survival": show_survival_line,
           "goal_type": goal_type,
@@ -573,7 +562,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
       initial_accumulated_val = float(
           stat_settings.get("initial_accumulated_val", 0.0)
       )
-      survival_type = mode_settings.get("survival_type", "Nincs")
       survival_value = float(mode_settings.get("survival_value", 0.0))
       show_survival_line = mode_settings.get("show_survival", True)
       goal_type = mode_settings.get("goal_type", "Nincs")
@@ -753,7 +741,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
     y_vals_temp = [item["val"] for item in raw_items] if raw_items else []
     calc_survival_val = (
-        survival_value if survival_type == "Fix érték (db/Ft)" else 0.0
+        survival_value if (show_survival_line and survival_value > 0) else 0.0
     )
 
     calc_goal_val = 0.0
@@ -1890,7 +1878,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
       ):
         st.session_state.db["groups"].append(new_group_name)
         save_data(st.session_state.db)
-        st.success(f"'{new_group_name}' sikeresen létrehozva!")
+        St.success(f"'{new_group_name}' sikeresen létrehozva!")
         st.rerun()
       else:
         st.warning("Add meg a nevet vagy már létezik ilyen részleg!")
