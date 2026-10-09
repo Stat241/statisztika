@@ -221,9 +221,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         col_m1, col_m2 = st.sidebar.columns(2)
         with col_m1:
             margin_l = st.number_input("Bal margó (px):", value=int(stat_settings.get("margin_l", 60)), step=5, key=f"ml_{selected_stat}")
-            margin_t = st.number_input("Felső margó (px):", value=int(stat_settings.get("margin_t", 130)), step=5, key=f"mt_{selected_stat}")
+            margin_t = st.number_input("Felső margó (px):", value=int(stat_settings.get("margin_t", 160)), step=5, key=f"mt_{selected_stat}")
         with col_m2:
-            margin_r = st.number_input("Jobb margó (px):", value=int(stat_settings.get("margin_r", 100)), step=5, key=f"mr_{selected_stat}")
+            margin_r = st.number_input("Jobb margó (px):", value=int(stat_settings.get("margin_r", 140)), step=5, key=f"mr_{selected_stat}")
             margin_b = st.number_input("Alsó margó (px):", value=int(stat_settings.get("margin_b", 90)), step=5, key=f"mb_{selected_stat}")
 
         st.sidebar.markdown("---")
@@ -637,7 +637,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
 
-                    xaxis_range = [0, max(unique_x) + 0.6] if len(unique_x) > 1 else [0, 0.5]
+                    xaxis_range = [-0.6, max(unique_x) + 0.6] if len(unique_x) > 1 else [-0.5, 0.5]
 
                     layout_args = dict(
                         title=dict(
@@ -742,7 +742,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
             fig.update_layout(
                 title=dict(text=f"<b>Statisztikák Relatív Összevetése ({comp_period_type})</b>", x=0.5, font=dict(size=36, color="#000000")),
                 plot_bgcolor="white", paper_bgcolor="white", height=650, margin=dict(t=120, b=120, l=60, r=40),
-                xaxis=dict(tickmode="array", tickvals=list(range(1, max_len + 1)), ticktext=[f"{i}." for i in range(1, max_len + 1)], title=dict(text="Relatív Időszak Sorszáma", font=dict(size=16, color="#000000")), showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5, showline=True, linecolor="#000000", linewidth=3, tickfont=dict(color="#000000", size=15, family="Arial Black")),
+                xaxis=dict(tickmode="array", tickvals=list(range(1, max_len + 1)), ticktext=[f"{i}." for i in range(1, max_len + 1)], title=dict(text="Relatív Időszak Sorszáma", font=dict(size=16, color="#000000")), showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5, showline=True, linecolor="#000000", linewidth=3, tickfont=dict(color="#000000", size=15, family="Arial Black"), range=[0.4, max_len + 0.6]),
                 yaxis=dict(rangemode="tozero", showgrid=True, gridcolor="#F1F5F9", gridwidth=2.5, showline=True, linecolor="#000000", linewidth=3, tickfont=dict(color="#000000", size=18, family="Arial Black")),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=16))
             )
