@@ -907,6 +907,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
               font=dict(size=20, color="#C5A059", family="Arial Black"),
           )
 
+        # --- TENGELY SKÁLA ÉS FORDÍTOTT LOGIKA JAVÍTÁSA ---
         yaxis_dict = dict(
             title=dict(text="", font=dict(color="#000000", size=1)),
             showgrid=True,
@@ -918,10 +919,37 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             linewidth=3.5,
             mirror=True,
         )
-        if is_stat_inverted_check:
-          yaxis_dict["autorange"] = "reversed"
-        else:
-          yaxis_dict["rangemode"] = "tozero"
+
+        has_custom_range = False
+        try:
+          if (
+              ymin is not None
+              and str(ymin).strip() != ""
+              and ymax is not None
+              and str(ymax).strip() != ""
+          ):
+            f_min = float(ymin)
+            f_max = float(ymax)
+            if is_stat_inverted_check:
+              # Fordított skálánál a Plotly [Max, Min] formátumban várja a határokat
+              yaxis_dict["range"] = [f_max, f_min]
+            else:
+              yaxis_dict["range"] = [f_min, f_max]
+            has_custom_range = True
+        except Exception:
+          pass
+
+        if not has_custom_range:
+          if is_stat_inverted_check:
+            yaxis_dict["autorange"] = "reversed"
+          else:
+            yaxis_dict["rangemode"] = "tozero"
+
+        if ystep is not None and str(ystep).strip() != "":
+          try:
+            yaxis_dict["dtick"] = float(ystep)
+          except Exception:
+            pass
 
         xaxis_range = [0, max(unique_x) + 0.5] if len(unique_x) > 1 else [0, 0.5]
 
@@ -961,14 +989,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             ),
             yaxis=yaxis_dict,
         )
-
-        try:
-          if ymin and ymax:
-            layout_args["yaxis"]["range"] = [float(ymin), float(ymax)]
-          if ystep:
-            layout_args["yaxis"]["dtick"] = float(ystep)
-        except Exception:
-          pass
 
         fig.update_layout(**layout_args)
         st.plotly_chart(fig, use_container_width=True)
@@ -1475,7 +1495,6 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
             card_goal_type = "Nincs"
             card_goal_target = 0.0
 
-            # Cél és Életvonal leérése a megfelelő nézetből ha van beállítva
             m_lookup_key = (
                 dash_period
                 if dash_period != "Nyers / Napi adatok"
