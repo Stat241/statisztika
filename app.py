@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 from datetime import datetime
@@ -425,6 +426,23 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             step=5,
             key=f"mb_{selected_stat}",
         )
+
+      # --- BEÁLLÍTÁSOK ÁTVITELE MINDEN STATISZTIKÁRA GOMB ---
+      st.sidebar.markdown("---")
+      if st.sidebar.button(
+          "🔄 Beállítások átvitele MINDEN statisztikára",
+          key=f"apply_all_btn_{selected_stat}",
+      ):
+        if "settings" not in st.session_state.db:
+          st.session_state.db["settings"] = {}
+        curr_settings_copy = json.loads(json.dumps(stat_settings))
+        for s_loop in all_stat_names:
+          st.session_state.db["settings"][s_loop] = copy.deepcopy(
+              curr_settings_copy
+          )
+        save_data(st.session_state.db)
+        st.sidebar.success("Minden statisztika megkapta ezeket a beállításokat!")
+        st.rer()
     else:
       person_name = stat_settings.get("person_name", "Bíró Laura")
       person_post = stat_settings.get("person_post", "DIV1")
@@ -587,7 +605,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         height=50,
     )
 
-    # LEÍRÁS MEGJELENÍTÉSE
     if stat_desc:
       st.info(f"ℹ️ **Útmutató a statisztikához:** {stat_desc}")
 
