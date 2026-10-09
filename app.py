@@ -208,7 +208,6 @@ menu_options = [
     "📊 Egyedi Statisztika Nézet", 
     "📈 Több Statisztika Összevetése", 
     "📋 Összesítő Dashboard (Kártya Nézet)",
-    "📖 Eseménynapló",
     "➕ Új Statisztika Létrehozása",
     "⚙️ Adminisztráció & Archívum"
 ]
@@ -798,7 +797,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
 
 # 3. ÖSSZESÍTŐ DASHBOARD (KÁRTYA NÉZET + ÁLLAPOTOK)
 elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
-    st.title("📋 Teljesítmembérő Statisztikák Dashboard")
+    st.title("📋 Teljesítménymérő Statisztikák Dashboard")
     
     all_groups = db.get("groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"])
     selected_group_filter = st.selectbox("Szűrés csoport / részleg szerint:", ["Összes csoport"] + all_groups)
@@ -926,33 +925,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                             with c_date2:
                                 st.date_input("Meddig:", value=max_d, key=f"to_{s_name}_{i}_{j}") if max_d else st.text_input("Meddig:", value="", key=f"to_empty_{s_name}_{i}_{j}")
 
-# 4. ESEMÉNYNAPLÓ
-elif selected_menu == "📖 Eseménynapló":
-    st.title("📖 Rendszer Eseménynapló & Megjegyzések")
-    st.write("Itt láthatod az összes statisztikához rögzített eseményt és megjegyzést időrendben.")
-    
-    all_events = []
-    for s_name in stat_names:
-        s_data = db["stats"][s_name]["data"]
-        s_unit = db["stats"][s_name].get("unit", "")
-        for item in s_data:
-            if len(item) > 2 and item[2].strip():
-                all_events.append({
-                    "date": item[0],
-                    "stat": s_name,
-                    "value": fmt_num(item[1], s_unit),
-                    "note": item[2]
-                })
-    
-    if all_events:
-        all_events_sorted = sorted(all_events, key=lambda x: x["date"], reverse=True)
-        df_events = pd.DataFrame(all_events_sorted)
-        df_events.columns = ["Dátum", "Statisztika neve", "Érték", "Esemény / Megjegyzés"]
-        st.dataframe(df_events, use_container_width=True, hide_index=True)
-    else:
-        st.info("Még nincsenek rögzített események vagy megjegyzések a statisztikákhoz.")
-
-# 5. ÚJ STATISZTIKA LÉTREHOZÁSA
+# 4. ÚJ STATISZTIKA LÉTREHOZÁSA
 elif selected_menu == "➕ Új Statisztika Létrehozása":
     st.title("➕ Új Statisztika Kategória Létrehozása")
     st.write("Itt hozhatsz létre új adatsort és sorolhatod be a megfelelő részlegbe.")
@@ -982,7 +955,7 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
             else:
                 st.warning("Adj meg egy nevet!")
 
-# 6. ADMINISZTRÁCIÓ & ARCHÍVUM
+# 5. ADMINISZTRÁCIÓ & ARCHÍVUM
 elif selected_menu == "⚙️ Adminisztráció & Archívum":
     st.title("⚙️ Rendszer Adminisztráció")
     
