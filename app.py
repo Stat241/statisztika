@@ -272,7 +272,7 @@ if "assigned_groups" not in st.session_state:
   st.session_state.assigned_groups = []
 
 if not st.session_state.logged_in:
-  st.title("🔐 Bejelentkezés a Rendszerbe")
+  st.title("Bejelentkezés a Rendszerbe")
   with st.form("login_form"):
     input_user = st.text_input("Felhasználónév:")
     input_pass = st.text_input("Jelszó:", type="password")
@@ -297,7 +297,6 @@ if not st.session_state.logged_in:
       else:
         st.error("Hibás felhasználónév vagy jelszó!")
 
-  st.caption("Alapértelmezett admin fiók: `admin` / `admin123`")
   st.stop()
 
 # ================= SESSION STATE ADATOK =================
@@ -1874,7 +1873,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
 
   st.markdown("---")
 
-  # --- 2. FELHASZNÁLÓK ÉS JOGOSULTSÁGok KEZELÉSE ---
+  # --- 2. FELHASZNÁLÓK ÉS JOGOSULTSÁGOK KEZELÉSE ---
   st.subheader("👥 Felhasználók & Jogosultságok Kezelése")
 
   col_u_add, col_u_edit = st.columns(2)
