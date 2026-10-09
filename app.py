@@ -71,11 +71,29 @@ def load_users():
   if os.path.exists(USERS_FILE):
     try:
       with open(USERS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+        # Formátum migráció ha régi sima szótár lett volna
+        updated = {}
+        for u, val in data.items():
+          if isinstance(val, str):
+            updated[u] = {
+                "password": val,
+                "role": "admin" if u == "admin" else "user",
+                "assigned_stats": [],
+            }
+          else:
+            updated[u] = val
+        return updated
     except Exception:
       pass
-  # Alapértelmezett admin fiók: admin / admin123
-  return {"admin": "admin123", "laura": "pass123"}
+  return {
+      "admin": {"password": "admin123", "role": "admin", "assigned_stats": []},
+      "laura": {
+          "password": "pass123",
+          "role": "user",
+          "assigned_stats": ["Bruttó Beérkezett Bevétel"],
+      },
+  }
 
 
 def save_users(users_dict):
@@ -225,6 +243,10 @@ if "logged_in" not in st.session_state:
   st.session_state.logged_in = False
 if "username" not in st.session_state:
   st.session_state.username = ""
+if "user_role" not in st.session_state:
+  st.session_state.user_role = "user"
+if "assigned_stats" not in st.session_state:
+  st.session_state.assigned_stats = []
 
 if not st.session_state.logged_in:
   st.title("🔐 Bejelentkezés a Rendszerbe")
@@ -234,16 +256,23 @@ if not st.session_state.logged_in:
     login_btn = st.form_submit_button("Bejelentkezés")
 
     if login_btn:
-      if input_user in users_db and users_db[input_user] == input_pass:
+      if (
+          input_user in users_db
+          and users_db[input_user].get("password") == input_pass
+      ):
         st.session_state.logged_in = True
         st.session_state.username = input_user
+        st.session_state.user_role = users_db[input_user].get("role", "user")
+        st.session_state.assigned_stats = users_db[input_user].get(
+            "assigned_stats", []
+        )
         st.success("Sikeres bejelentkezés!")
         st.rerun()
       else:
         st.error("Hibás felhasználónév vagy jelszó!")
 
-  st.caption("Alapértelmezet bejelentkezés: `admin` / `admin123`")
-  st.stop()  # Leállítja a kód további futását, amíg nincs bejelentkezve
+  st.caption("Alapértelmezett admin fiók: `admin` / `admin123`")
+  st.stop()
 
 # ================= SESSION STATE ADATOK =================
 if "db" not in st.session_state:
@@ -255,25 +284,45 @@ if "groups" not in db:
   save_data(db)
 
 all_stat_names = list(db["stats"].keys())
-stat_names = all_stat_names
+
+# JOGOSULTSÁG ALAPJÁN ELÉRHETŐ STATISZTIKÁK SZŰRÉSE
+if st.session_state.user_role == "admin":
+  stat_names = all_stat_names
+else:
+  stat_names = [
+      s for s in all_stat_names if s in st.session_state.assigned_stats
+  ]
 
 # ================= NAVIGÁCIÓ =================
 st.sidebar.title("📌 Navigáció")
-st.sidebar.write(f"👤 Bejelentkezve: **{st.session_state.username}**")
+role_label = (
+    "👑 Adminisztrátor"
+    if st.session_state.user_role == "admin"
+    else "👤 Sima Felhasználó"
+)
+st.sidebar.write(f"Bejelentkezve: **{st.session_state.username}**")
+st.sidebar.caption(f"Jogosultság: {role_label}")
+
 if st.sidebar.button("🚪 Kijelentkezés"):
   st.session_state.logged_in = False
   st.session_state.username = ""
+  st.session_state.user_role = "user"
+  st.session_state.assigned_stats = []
   st.rerun()
 
 st.sidebar.markdown("---")
 
+# Menüpontok összeállítása jogosultság alapján
 menu_options = [
     "📊 Egyedi Statisztika Nézet",
     "📈 Több Statisztika Összevetése",
     "📋 Összesítő Dashboard (Kártya Nézet)",
-    "➕ Új Statisztika Létrehozása",
-    "⚙️ Adminisztráció & Archívum",
 ]
+
+if st.session_state.user_role == "admin":
+  menu_options.extend(
+      ["➕ Új Statisztika Létrehozása", "⚙️ Adminisztráció & Archívum"]
+  )
 
 selected_menu = st.sidebar.radio("Válassz funkciót:", menu_options)
 st.sidebar.markdown("---")
@@ -283,7 +332,10 @@ st.sidebar.markdown("---")
 # 1. EGYEDI STATISZTIKA NÉZET
 if selected_menu == "📊 Egyedi Statisztika Nézet":
   if not stat_names:
-    st.warning("⚠️ Nincs elérhető statisztikád. Hozz létre egyet a menüben!")
+    st.warning(
+        "⚠️ Nincs számodra elérhető statisztika hozzárendelve. Kérj hozzáférést"
+        " az admintól!"
+    )
   else:
     selected_stat = st.sidebar.selectbox("Választott statisztika:", stat_names)
 
@@ -292,60 +344,71 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     stat_settings = db.get("settings", {}).get(selected_stat, {})
     is_inverted = db["stats"][selected_stat].get("inverted", False)
 
-    person_name = st.sidebar.text_input(
-        "Név (Fejlécbe):",
-        value=stat_settings.get("person_name", "Bíró Laura"),
-        key=f"pname_{selected_stat}",
-    )
-    person_post = st.sidebar.text_input(
-        "Poszt (Fejlécbe):",
-        value=stat_settings.get("person_post", "DIV1"),
-        key=f"ppost_{selected_stat}",
-    )
-    is_stat_inverted_check = st.sidebar.checkbox(
-        "Fordított statisztika (0 felül van)",
-        value=is_inverted,
-        key=f"inv_{selected_stat}",
-    )
+    # HA ADMIN, MEGELENÍTJÜK A STRUKTUÁLIS ÉS FORMÁTUM BEÁLLÍTÁSOKAT
+    if st.session_state.user_role == "admin":
+      person_name = st.sidebar.text_input(
+          "Név (Fejlécbe):",
+          value=stat_settings.get("person_name", "Bíró Laura"),
+          key=f"pname_{selected_stat}",
+      )
+      person_post = st.sidebar.text_input(
+          "Poszt (Fejlécbe):",
+          value=stat_settings.get("person_post", "DIV1"),
+          key=f"ppost_{selected_stat}",
+      )
+      is_stat_inverted_check = st.sidebar.checkbox(
+          "Fordított statisztika (0 felül van)",
+          value=is_inverted,
+          key=f"inv_{selected_stat}",
+      )
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("📐 Grafikon & Nyomtatás Méretezése")
-    chart_height = st.sidebar.slider(
-        "Grafikon magassága (px):",
-        min_value=300,
-        max_value=900,
-        value=int(stat_settings.get("chart_height", 550)),
-        step=10,
-        key=f"ch_{selected_stat}",
-    )
+      st.sidebar.markdown("---")
+      st.sidebar.subheader("📐 Grafikon & Nyomtatás Méretezése")
+      chart_height = st.sidebar.slider(
+          "Grafikon magassága (px):",
+          min_value=300,
+          max_value=900,
+          value=int(stat_settings.get("chart_height", 550)),
+          step=10,
+          key=f"ch_{selected_stat}",
+      )
 
-    col_m1, col_m2 = st.sidebar.columns(2)
-    with col_m1:
-      margin_l = st.number_input(
-          "Bal margó (px):",
-          value=int(stat_settings.get("margin_l", 60)),
-          step=5,
-          key=f"ml_{selected_stat}",
-      )
-      margin_t = st.number_input(
-          "Felső margó (px):",
-          value=int(stat_settings.get("margin_t", 130)),
-          step=5,
-          key=f"mt_{selected_stat}",
-      )
-    with col_m2:
-      margin_r = st.number_input(
-          "Jobb margó (px):",
-          value=int(stat_settings.get("margin_r", 100)),
-          step=5,
-          key=f"mr_{selected_stat}",
-      )
-      margin_b = st.number_input(
-          "Alsó margó (px):",
-          value=int(stat_settings.get("margin_b", 90)),
-          step=5,
-          key=f"mb_{selected_stat}",
-      )
+      col_m1, col_m2 = st.sidebar.columns(2)
+      with col_m1:
+        margin_l = st.number_input(
+            "Bal margó (px):",
+            value=int(stat_settings.get("margin_l", 60)),
+            step=5,
+            key=f"ml_{selected_stat}",
+        )
+        margin_t = st.number_input(
+            "Felső margó (px):",
+            value=int(stat_settings.get("margin_t", 130)),
+            step=5,
+            key=f"mt_{selected_stat}",
+        )
+      with col_m2:
+        margin_r = st.number_input(
+            "Jobb margó (px):",
+            value=int(stat_settings.get("margin_r", 100)),
+            step=5,
+            key=f"mr_{selected_stat}",
+        )
+        margin_b = st.number_input(
+            "Alsó margó (px):",
+            value=int(stat_settings.get("margin_b", 90)),
+            step=5,
+            key=f"mb_{selected_stat}",
+        )
+    else:
+      person_name = stat_settings.get("person_name", "Bíró Laura")
+      person_post = stat_settings.get("person_post", "DIV1")
+      is_stat_inverted_check = is_inverted
+      chart_height = int(stat_settings.get("chart_height", 550))
+      margin_l = int(stat_settings.get("margin_l", 60))
+      margin_r = int(stat_settings.get("margin_r", 100))
+      margin_t = int(stat_settings.get("margin_t", 130))
+      margin_b = int(stat_settings.get("margin_b", 90))
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("📅 Időszakos összesítés")
@@ -362,120 +425,138 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     valid_surv = ["Nincs", "Fix érték (db/Ft)"]
     valid_goals = ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"]
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader(f"📐 Skála Tengely Beállítások ({indiv_agg})")
-    col_min, col_max, col_step = st.sidebar.columns(3)
-    with col_min:
-      ymin = st.text_input(
-          "Min",
-          value=str(mode_settings.get("ymin", "")),
-          key=f"ymin_{selected_stat}_{indiv_agg}",
+    if st.session_state.user_role == "admin":
+      st.sidebar.markdown("---")
+      st.sidebar.subheader(f"📐 Skála Tengely Beállítások ({indiv_agg})")
+      col_min, col_max, col_step = st.sidebar.columns(3)
+      with col_min:
+        ymin = st.text_input(
+            "Min",
+            value=str(mode_settings.get("ymin", "")),
+            key=f"ymin_{selected_stat}_{indiv_agg}",
+        )
+      with col_max:
+        ymax = st.text_input(
+            "Max",
+            value=str(mode_settings.get("ymax", "")),
+            key=f"ymax_{selected_stat}_{indiv_agg}",
+        )
+      with col_step:
+        ystep = st.text_input(
+            "Lépés",
+            value=str(mode_settings.get("ystep", "")),
+            key=f"ystep_{selected_stat}_{indiv_agg}",
+        )
+
+      st.sidebar.markdown("---")
+      st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
+      show_acc_in_brackets = st.sidebar.checkbox(
+          "Akkumulált összeg megjelenítése a pontok alatt",
+          value=stat_settings.get("show_acc_in_brackets", False),
+          key=f"show_acc_{selected_stat}",
       )
-    with col_max:
-      ymax = st.text_input(
-          "Max",
-          value=str(mode_settings.get("ymax", "")),
-          key=f"ymax_{selected_stat}_{indiv_agg}",
-      )
-    with col_step:
-      ystep = st.text_input(
-          "Lépés",
-          value=str(mode_settings.get("ystep", "")),
-          key=f"ystep_{selected_stat}_{indiv_agg}",
+      initial_accumulated_val = st.sidebar.number_input(
+          "Kezdő alap:",
+          value=float(stat_settings.get("initial_accumulated_val", 0.0)),
+          step=1.0,
+          key=f"init_acc_{selected_stat}",
       )
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
-    show_acc_in_brackets = st.sidebar.checkbox(
-        "Akkumulált összeg megjelenítése a pontok alatt",
-        value=stat_settings.get("show_acc_in_brackets", False),
-        key=f"show_acc_{selected_stat}",
-    )
-    initial_accumulated_val = st.sidebar.number_input(
-        "Kezdő alap:",
-        value=float(stat_settings.get("initial_accumulated_val", 0.0)),
-        step=1.0,
-        key=f"init_acc_{selected_stat}",
-    )
+      st.sidebar.markdown("---")
+      st.sidebar.subheader(f"🛡️ Életvonal ({indiv_agg})")
+      surv_type_val = mode_settings.get("survival_type", "Nincs")
+      survival_type = st.sidebar.selectbox(
+          "Életvonal típusa:",
+          valid_surv,
+          index=valid_surv.index(surv_type_val)
+          if surv_type_val in valid_surv
+          else 0,
+          key=f"surv_type_{selected_stat}_{indiv_agg}",
+      )
+      survival_value = st.sidebar.number_input(
+          "Életvonal értéke:",
+          value=float(mode_settings.get("survival_value", 0.0)),
+          step=1.0,
+          key=f"surv_val_{selected_stat}_{indiv_agg}",
+      )
+      show_survival_line = st.sidebar.checkbox(
+          "Életvonal rajzolása a grafikonra",
+          value=mode_settings.get("show_survival", True),
+          key=f"show_surv_{selected_stat}_{indiv_agg}",
+      )
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader(f"🛡️ Életvonal ({indiv_agg})")
-    surv_type_val = mode_settings.get("survival_type", "Nincs")
-    survival_type = st.sidebar.selectbox(
-        "Életvonal típusa:",
-        valid_surv,
-        index=valid_surv.index(surv_type_val)
-        if surv_type_val in valid_surv
-        else 0,
-        key=f"surv_type_{selected_stat}_{indiv_agg}",
-    )
-    survival_value = st.sidebar.number_input(
-        "Életvonal értéke:",
-        value=float(mode_settings.get("survival_value", 0.0)),
-        step=1.0,
-        key=f"surv_val_{selected_stat}_{indiv_agg}",
-    )
-    show_survival_line = st.sidebar.checkbox(
-        "Életvonal rajzolása a grafikonra",
-        value=mode_settings.get("show_survival", True),
-        key=f"show_surv_{selected_stat}_{indiv_agg}",
-    )
+      st.sidebar.markdown("---")
+      st.sidebar.subheader(f"🎯 Célkitűzés ({indiv_agg})")
+      goal_type_val = mode_settings.get("goal_type", "Nincs")
+      goal_type = st.sidebar.selectbox(
+          "Cél típusa:",
+          valid_goals,
+          index=valid_goals.index(goal_type_val)
+          if goal_type_val in valid_goals
+          else 0,
+          key=f"goal_type_{selected_stat}_{indiv_agg}",
+      )
+      goal_value = st.sidebar.number_input(
+          "Cél mértéke:",
+          value=float(mode_settings.get("goal_val_target", 0.0)),
+          step=1.0,
+          key=f"goal_val_{selected_stat}_{indiv_agg}",
+      )
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader(f"🎯 Célkitűzés ({indiv_agg})")
-    goal_type_val = mode_settings.get("goal_type", "Nincs")
-    goal_type = st.sidebar.selectbox(
-        "Cél típusa:",
-        valid_goals,
-        index=valid_goals.index(goal_type_val)
-        if goal_type_val in valid_goals
-        else 0,
-        key=f"goal_type_{selected_stat}_{indiv_agg}",
-    )
-    goal_value = st.sidebar.number_input(
-        "Cél mértéke:",
-        value=float(mode_settings.get("goal_val_target", 0.0)),
-        step=1.0,
-        key=f"goal_val_{selected_stat}_{indiv_agg}",
-    )
+      # MENTÉS AUTOMATIKUSAN ADMINNAK
+      if "settings" not in st.session_state.db:
+        st.session_state.db["settings"] = {}
+      if selected_stat not in st.session_state.db["settings"]:
+        st.session_state.db["settings"][selected_stat] = {}
 
-    # AZONNALI AUTOMATIKUS MENTÉS
-    if "settings" not in st.session_state.db:
-      st.session_state.db["settings"] = {}
-    if selected_stat not in st.session_state.db["settings"]:
-      st.session_state.db["settings"][selected_stat] = {}
+      st.session_state.db["settings"][selected_stat][
+          "person_name"
+      ] = person_name
+      st.session_state.db["settings"][selected_stat][
+          "person_post"
+      ] = person_post
+      st.session_state.db["settings"][selected_stat][
+          "chart_height"
+      ] = chart_height
+      st.session_state.db["settings"][selected_stat]["margin_l"] = margin_l
+      st.session_state.db["settings"][selected_stat]["margin_r"] = margin_r
+      st.session_state.db["settings"][selected_stat]["margin_t"] = margin_t
+      st.session_state.db["settings"][selected_stat]["margin_b"] = margin_b
+      st.session_state.db["settings"][selected_stat][
+          "show_acc_in_brackets"
+      ] = show_acc_in_brackets
+      st.session_state.db["settings"][selected_stat][
+          "initial_accumulated_val"
+      ] = initial_accumulated_val
 
-    st.session_state.db["settings"][selected_stat]["person_name"] = person_name
-    st.session_state.db["settings"][selected_stat]["person_post"] = person_post
-    st.session_state.db["settings"][selected_stat][
-        "chart_height"
-    ] = chart_height
-    st.session_state.db["settings"][selected_stat]["margin_l"] = margin_l
-    st.session_state.db["settings"][selected_stat]["margin_r"] = margin_r
-    st.session_state.db["settings"][selected_stat]["margin_t"] = margin_t
-    st.session_state.db["settings"][selected_stat]["margin_b"] = margin_b
-    st.session_state.db["settings"][selected_stat][
-        "show_acc_in_brackets"
-    ] = show_acc_in_brackets
-    st.session_state.db["settings"][selected_stat][
-        "initial_accumulated_val"
-    ] = initial_accumulated_val
+      st.session_state.db["settings"][selected_stat][indiv_agg] = {
+          "ymin": ymin,
+          "ymax": ymax,
+          "ystep": ystep,
+          "survival_type": survival_type,
+          "survival_value": survival_value,
+          "show_survival": show_survival_line,
+          "goal_type": goal_type,
+          "goal_val_target": goal_value,
+      }
 
-    st.session_state.db["settings"][selected_stat][indiv_agg] = {
-        "ymin": ymin,
-        "ymax": ymax,
-        "ystep": ystep,
-        "survival_type": survival_type,
-        "survival_value": survival_value,
-        "show_survival": show_survival_line,
-        "goal_type": goal_type,
-        "goal_val_target": goal_value,
-    }
-
-    st.session_state.db["stats"][selected_stat][
-        "inverted"
-    ] = is_stat_inverted_check
-    save_data(st.session_state.db)
+      st.session_state.db["stats"][selected_stat][
+          "inverted"
+      ] = is_stat_inverted_check
+      save_data(st.session_state.db)
+    else:
+      ymin = str(mode_settings.get("ymin", ""))
+      ymax = str(mode_settings.get("ymax", ""))
+      ystep = str(mode_settings.get("ystep", ""))
+      show_acc_in_brackets = stat_settings.get("show_acc_in_brackets", False)
+      initial_accumulated_val = float(
+          stat_settings.get("initial_accumulated_val", 0.0)
+      )
+      survival_type = mode_settings.get("survival_type", "Nincs")
+      survival_value = float(mode_settings.get("survival_value", 0.0))
+      show_survival_line = mode_settings.get("show_survival", True)
+      goal_type = mode_settings.get("goal_type", "Nincs")
+      goal_value = float(mode_settings.get("goal_val_target", 0.0))
 
     # --- GRAFIKON NÉZET ---
     components.html(
@@ -1011,456 +1092,461 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 # 2. TÖBB STATISZTIKA ÖSSZEVETÉSE
 elif selected_menu == "📈 Több Statisztika Összevetése":
   st.title("📈 Statisztikák Relatív Összevetése")
-  st.write(
-      "A görbék sorszám szerint egymásra illesztve jelennek meg, megőrizve az"
-      " eredeti naptári dátumokat."
-  )
+  if not stat_names:
+    st.warning("⚠️ Nincs elérhető statisztika az összehasonlításhoz.")
+  else:
+    comp_period_type = st.radio(
+        "Összehasonlítás alapja:",
+        ["Napi", "Heti (Cs 14:00)", "Havi"],
+        horizontal=True,
+    )
+    show_dates_on_chart = st.checkbox(
+        "Eredeti dátumok megjelenítése a feliratokban", value=True
+    )
 
-  comp_period_type = st.radio(
-      "Összehasonlítás alapja:",
-      ["Napi", "Heti (Cs 14:00)", "Havi"],
-      horizontal=True,
-  )
-  show_dates_on_chart = st.checkbox(
-      "Eredeti dátumok megjelenítése a feliratokban", value=True
-  )
+    selected_multi_stats = st.multiselect(
+        "Válassz statisztikákat az összevetéshez:",
+        stat_names,
+        default=stat_names[:2] if len(stat_names) >= 2 else stat_names,
+    )
 
-  selected_multi_stats = st.multiselect(
-      "Válassz statisztikákat az összevetéshez:",
-      stat_names,
-      default=stat_names[:2] if len(stat_names) >= 2 else stat_names,
-  )
+    if selected_multi_stats:
+      fig = go.Figure()
+      color_palette = [
+          "#1f77b4",
+          "#ff7f0e",
+          "#2ca02c",
+          "#d62728",
+          "#9467bd",
+          "#8c564b",
+          "#e377c2",
+          "#7f7f7f",
+          "#bcbd22",
+          "#17becf",
+      ]
+      max_len = 0
+      processed_series = []
 
-  if selected_multi_stats:
-    fig = go.Figure()
-    color_palette = [
-        "#1f77b4",
-        "#ff7f0e",
-        "#2ca02c",
-        "#d62728",
-        "#9467bd",
-        "#8c564b",
-        "#e377c2",
-        "#7f7f7f",
-        "#bcbd22",
-        "#17becf",
-    ]
-    max_len = 0
-    processed_series = []
+      for stat_name in selected_multi_stats:
+        stat_data = db["stats"][stat_name]["data"]
+        s_unit = db["stats"][stat_name].get("unit", "")
+        if not stat_data:
+          continue
 
-    for stat_name in selected_multi_stats:
-      stat_data = db["stats"][stat_name]["data"]
-      s_unit = db["stats"][stat_name].get("unit", "")
-      if not stat_data:
-        continue
-
-      clean_data = [[item[0], item[1]] for item in stat_data]
-      df = pd.DataFrame(clean_data, columns=["Dátum", "Érték"])
-      df["Sort_Key"] = pd.to_datetime(
-          df["Dátum"], format="mixed", errors="coerce"
-      )
-      df = df.dropna(subset=["Sort_Key"])
-      df = df.sort_values("Sort_Key")
-
-      try:
-        if comp_period_type == "Napi":
-          df["Daily_Bucket"] = df["Sort_Key"].apply(
-              lambda dt: dt.strftime("%Y-%m-%d")
-          )
-          res = (
-              df.groupby(["Daily_Bucket"], sort=False)
-              .agg({"Sort_Key": "min", "Érték": "sum"})
-              .reset_index()
-              .sort_values("Sort_Key")
-              .rename(columns={"Daily_Bucket": "Dátum"})
-          )
-        elif comp_period_type == "Heti (Cs 14:00)":
-          df["Period_End"] = df["Sort_Key"].apply(get_thursday_period_end)
-          res = (
-              df.groupby("Period_End")
-              .agg({"Érték": "sum"})
-              .reset_index()
-              .rename(columns={"Period_End": "Dátum"})
-          )
-        else:
-          df["Period_Month"] = (
-              df["Sort_Key"]
-              .dt.to_period("M")
-              .dt.to_timestamp(how="end")
-              .dt.floor("D")
-          )
-          res = (
-              df.groupby("Period_Month")
-              .agg({"Érték": "sum"})
-              .reset_index()
-              .rename(columns={"Period_Month": "Dátum"})
-          )
-      except Exception:
-        res = df
-
-      res["Érték"] = res["Érték"].fillna(0)
-      items = res[["Dátum", "Érték"]].values.tolist()
-      if len(items) > max_len:
-        max_len = len(items)
-      processed_series.append((stat_name, s_unit, items))
-
-    if max_len > 0:
-      for idx, (stat_name, s_unit, items) in enumerate(processed_series):
-        y_vals = [item[1] for item in items]
-        orig_dates = [
-            dt.strftime("%Y.%m.%d.")
-            if isinstance(dt, (pd.Timestamp, datetime))
-            else str(dt)
-            for dt, _ in items
-        ]
-
-        x_idx_current = list(range(1, len(y_vals) + 1))
-        formatted_texts = [fmt_num(y, s_unit) for y in y_vals]
-        trace_color = color_palette[idx % len(color_palette)]
-
-        fig.add_trace(
-            go.Scatter(
-                x=x_idx_current,
-                y=y_vals,
-                mode="lines+markers",
-                name=stat_name,
-                customdata=orig_dates,
-                hovertemplate=(
-                    "<b>%{fullData.name}</b><br>Sorszám:"
-                    " %{x}.<br><b>Dátum: %{customdata}</b><br>Érték:"
-                    " %{text}<extra></extra>"
-                ),
-                text=formatted_texts,
-                line=dict(color=trace_color, width=5),
-                marker=dict(size=12, color=trace_color),
-                cliponaxis=False,
-            )
+        clean_data = [[item[0], item[1]] for item in stat_data]
+        df = pd.DataFrame(clean_data, columns=["Dátum", "Érték"])
+        df["Sort_Key"] = pd.to_datetime(
+            df["Dátum"], format="mixed", errors="coerce"
         )
+        df = df.dropna(subset=["Sort_Key"])
+        df = df.sort_values("Sort_Key")
 
-        for x_val, y_val, txt, d_str in zip(
-            x_idx_current, y_vals, formatted_texts, orig_dates
-        ):
-          annotation_text = (
-              f"{txt}<br>({d_str})" if show_dates_on_chart else txt
-          )
-          fig.add_annotation(
-              x=x_val,
-              y=y_val,
-              text=annotation_text,
-              showarrow=False,
-              yshift=12,
-              xshift=18,
-              textangle=-75,
-              font=dict(size=11, color=trace_color, family="Arial Black"),
-              xanchor="center",
-              yanchor="bottom",
+        try:
+          if comp_period_type == "Napi":
+            df["Daily_Bucket"] = df["Sort_Key"].apply(
+                lambda dt: dt.strftime("%Y-%m-%d")
+            )
+            res = (
+                df.groupby(["Daily_Bucket"], sort=False)
+                .agg({"Sort_Key": "min", "Érték": "sum"})
+                .reset_index()
+                .sort_values("Sort_Key")
+                .rename(columns={"Daily_Bucket": "Dátum"})
+            )
+          elif comp_period_type == "Heti (Cs 14:00)":
+            df["Period_End"] = df["Sort_Key"].apply(get_thursday_period_end)
+            res = (
+                df.groupby("Period_End")
+                .agg({"Érték": "sum"})
+                .reset_index()
+                .rename(columns={"Period_End": "Dátum"})
+            )
+          else:
+            df["Period_Month"] = (
+                df["Sort_Key"]
+                .dt.to_period("M")
+                .dt.to_timestamp(how="end")
+                .dt.floor("D")
+            )
+            res = (
+                df.groupby("Period_Month")
+                .agg({"Érték": "sum"})
+                .reset_index()
+                .rename(columns={"Period_Month": "Dátum"})
+            )
+        except Exception:
+          res = df
+
+        res["Érték"] = res["Érték"].fillna(0)
+        items = res[["Dátum", "Érték"]].values.tolist()
+        if len(items) > max_len:
+          max_len = len(items)
+        processed_series.append((stat_name, s_unit, items))
+
+      if max_len > 0:
+        for idx, (stat_name, s_unit, items) in enumerate(processed_series):
+          y_vals = [item[1] for item in items]
+          orig_dates = [
+              dt.strftime("%Y.%m.%d.")
+              if isinstance(dt, (pd.Timestamp, datetime))
+              else str(dt)
+              for dt, _ in items
+          ]
+
+          x_idx_current = list(range(1, len(y_vals) + 1))
+          formatted_texts = [fmt_num(y, s_unit) for y in y_vals]
+          trace_color = color_palette[idx % len(color_palette)]
+
+          fig.add_trace(
+              go.Scatter(
+                  x=x_idx_current,
+                  y=y_vals,
+                  mode="lines+markers",
+                  name=stat_name,
+                  customdata=orig_dates,
+                  hovertemplate=(
+                      "<b>%{fullData.name}</b><br>Sorszám:"
+                      " %{x}.<br><b>Dátum: %{customdata}</b><br>Érték:"
+                      " %{text}<extra></extra>"
+                  ),
+                  text=formatted_texts,
+                  line=dict(color=trace_color, width=5),
+                  marker=dict(size=12, color=trace_color),
+                  cliponaxis=False,
+              )
           )
 
-      fig.update_layout(
-          title=dict(
-              text=(
-                  "<b>Statisztikák Relatív Összevetése"
-                  f" ({comp_period_type})</b>"
-              ),
-              x=0.5,
-              font=dict(size=36, color="#000000"),
-          ),
-          plot_bgcolor="white",
-          paper_bgcolor="white",
-          height=650,
-          margin=dict(t=120, b=120, l=60, r=40),
-          xaxis=dict(
-              tickmode="array",
-              tickvals=list(range(1, max_len + 1)),
-              ticktext=[f"{i}." for i in range(1, max_len + 1)],
-              title=dict(
-                  text="Relatív Időszak Sorszáma",
-                  font=dict(size=16, color="#000000"),
-              ),
-              showgrid=True,
-              gridcolor="#F1F5F9",
-              gridwidth=2.5,
-              showline=True,
-              linecolor="#000000",
-              linewidth=3,
-              mirror=True,
-              tickfont=dict(color="#000000", size=15, family="Arial Black"),
-          ),
-          yaxis=dict(
-              rangemode="tozero",
-              showgrid=True,
-              gridcolor="#F1F5F9",
-              gridwidth=2.5,
-              showline=True,
-              linecolor="#000000",
-              linewidth=3,
-              mirror=True,
-              tickfont=dict(color="#000000", size=18, family="Arial Black"),
-          ),
-          legend=dict(
-              orientation="h",
-              yanchor="bottom",
-              y=1.02,
-              xanchor="right",
-              x=1,
-              font=dict(size=16),
-          ),
-      )
-      st.plotly_chart(fig, use_container_width=True)
+          for x_val, y_val, txt, d_str in zip(
+              x_idx_current, y_vals, formatted_texts, orig_dates
+          ):
+            annotation_text = (
+                f"{txt}<br>({d_str})" if show_dates_on_chart else txt
+            )
+            fig.add_annotation(
+                x=x_val,
+                y=y_val,
+                text=annotation_text,
+                showarrow=False,
+                yshift=12,
+                xshift=18,
+                textangle=-75,
+                font=dict(size=11, color=trace_color, family="Arial Black"),
+                xanchor="center",
+                yanchor="bottom",
+            )
+
+        fig.update_layout(
+            title=dict(
+                text=(
+                    "<b>Statisztikák Relatív Összevetése"
+                    f" ({comp_period_type})</b>"
+                ),
+                x=0.5,
+                font=dict(size=36, color="#000000"),
+            ),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            height=650,
+            margin=dict(t=120, b=120, l=60, r=40),
+            xaxis=dict(
+                tickmode="array",
+                tickvals=list(range(1, max_len + 1)),
+                ticktext=[f"{i}." for i in range(1, max_len + 1)],
+                title=dict(
+                    text="Relatív Időszak Sorszáma",
+                    font=dict(size=16, color="#000000"),
+                ),
+                showgrid=True,
+                gridcolor="#F1F5F9",
+                gridwidth=2.5,
+                showline=True,
+                linecolor="#000000",
+                linewidth=3,
+                mirror=True,
+                tickfont=dict(color="#000000", size=15, family="Arial Black"),
+            ),
+            yaxis=dict(
+                rangemode="tozero",
+                showgrid=True,
+                gridcolor="#F1F5F9",
+                gridwidth=2.5,
+                showline=True,
+                linecolor="#000000",
+                linewidth=3,
+                mirror=True,
+                tickfont=dict(color="#000000", size=18, family="Arial Black"),
+            ),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(size=16),
+            ),
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 # 3. ÖSSZESÍTŐ DASHBOARD
 elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
   st.title("📋 Teljesítménymérő Statisztikák Dashboard")
 
-  all_groups = db.get(
-      "groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
-  )
-  selected_group_filter = st.selectbox(
-      "Szűrés csoport / részleg szerint:", ["Összes csoport"] + all_groups
-  )
-
-  col_search, _ = st.columns([4, 1])
-  with col_search:
-    search_query = st.text_input(
-        "Keresés:",
-        placeholder="Keresés a statisztikák között...",
-        key="dash_search",
+  if not stat_names:
+    st.warning("⚠️ Nincs számodra megjeleníthető statisztika.")
+  else:
+    all_groups = db.get(
+        "groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
+    )
+    selected_group_filter = st.selectbox(
+        "Szűrés csoport / részleg szerint:", ["Összes csoport"] + all_groups
     )
 
-  filtered_stats = []
-  for s in stat_names:
-    s_group = db["stats"][s].get("group", "Egyéb")
-    if (
-        selected_group_filter != "Összes csoport"
-        and s_group != selected_group_filter
-    ):
-      continue
-    if search_query and search_query.lower() not in s.lower():
-      continue
-    filtered_stats.append(s)
+    col_search, _ = st.columns([4, 1])
+    with col_search:
+      search_query = st.text_input(
+          "Keresés:",
+          placeholder="Keresés a statisztikák között...",
+          key="dash_search",
+      )
 
-  if not filtered_stats:
-    st.info("Nincs találat a megadott feltételeknek megfelelő statisztikára.")
-  else:
-    for i in range(0, len(filtered_stats), 2):
-      cols = st.columns(2)
-      for j in range(2):
-        if i + j < len(filtered_stats):
-          s_name = filtered_stats[i + j]
-          s_info = db["stats"][s_name]
-          s_data_raw = s_info["data"]
-          s_unit = s_info.get("unit", "")
-          s_group = s_info.get("group", "Egyéb")
-          s_settings = db.get("settings", {}).get(s_name, {})
-          s_inverted = s_info.get("inverted", False)
+    filtered_stats = []
+    for s in stat_names:
+      s_group = db["stats"][s].get("group", "Egyéb")
+      if (
+          selected_group_filter != "Összes csoport"
+          and s_group != selected_group_filter
+      ):
+        continue
+      if search_query and search_query.lower() not in s.lower():
+        continue
+      filtered_stats.append(s)
 
-          p_name = s_settings.get("person_name", "")
-          p_post = s_settings.get("person_post", "")
-          assigned_str = (
-              f"{p_name} ({p_post})" if p_name or p_post else "Nincs megadva"
-          )
+    if not filtered_stats:
+      st.info("Nincs találat a megadott feltételeknek megfelelő statisztikára.")
+    else:
+      for i in range(0, len(filtered_stats), 2):
+        cols = st.columns(2)
+        for j in range(2):
+          if i + j < len(filtered_stats):
+            s_name = filtered_stats[i + j]
+            s_info = db["stats"][s_name]
+            s_data_raw = s_info["data"]
+            s_unit = s_info.get("unit", "")
+            s_group = s_info.get("group", "Egyéb")
+            s_settings = db.get("settings", {}).get(s_name, {})
+            s_inverted = s_info.get("inverted", False)
 
-          card_surv_val = 0.0
-          card_goal_type = "Nincs"
-          card_goal_target = 0.0
+            p_name = s_settings.get("person_name", "")
+            p_post = s_settings.get("person_post", "")
+            assigned_str = (
+                f"{p_name} ({p_post})" if p_name or p_post else "Nincs megadva"
+            )
 
-          for m_key in [
-              "Heti (Csütörtöki zárás 14:00)",
-              "Napi adatok",
-              "Havi összesítés",
-          ]:
-            if m_key in s_settings:
-              m_dict = s_settings[m_key]
-              if m_dict.get("show_survival", True) and float(
-                  m_dict.get("survival_value", 0.0)
-              ) > 0:
-                card_surv_val = float(m_dict.get("survival_value", 0.0))
-              if m_dict.get("goal_type", "Nincs") != "Nincs":
-                card_goal_type = m_dict.get("goal_type", "Nincs")
-                card_goal_target = float(m_dict.get("goal_val_target", 0.0))
-              if card_surv_val > 0 or card_goal_type != "Nincs":
-                break
+            card_surv_val = 0.0
+            card_goal_type = "Nincs"
+            card_goal_target = 0.0
 
-          card_items = (
-              sorted(s_data_raw, key=lambda x: str(x[0])) if s_data_raw else []
-          )
-          card_y = (
-              [float(item[1]) for item in card_items] if card_items else []
-          )
+            for m_key in [
+                "Heti (Csütörtöki zárás 14:00)",
+                "Napi adatok",
+                "Havi összesítés",
+            ]:
+              if m_key in s_settings:
+                m_dict = s_settings[m_key]
+                if m_dict.get("show_survival", True) and float(
+                    m_dict.get("survival_value", 0.0)
+                ) > 0:
+                  card_surv_val = float(m_dict.get("survival_value", 0.0))
+                if m_dict.get("goal_type", "Nincs") != "Nincs":
+                  card_goal_type = m_dict.get("goal_type", "Nincs")
+                  card_goal_target = float(m_dict.get("goal_val_target", 0.0))
+                if card_surv_val > 0 or card_goal_type != "Nincs":
+                  break
 
-          card_calc_goal = 0.0
-          if card_goal_type == "Fix érték (db/Ft)":
-            card_calc_goal = card_goal_target
-          elif card_goal_type == "Százalékos növekedés (%)" and len(card_y) > 0:
-            card_calc_goal = card_y[-1] * (1 + card_goal_target / 100)
+            card_items = (
+                sorted(s_data_raw, key=lambda x: str(x[0]))
+                if s_data_raw
+                else []
+            )
+            card_y = (
+                [float(item[1]) for item in card_items] if card_items else []
+            )
 
-          condition_text, condition_color = calculate_stat_condition(
-              s_data_raw, card_surv_val
-          )
+            card_calc_goal = 0.0
+            if card_goal_type == "Fix érték (db/Ft)":
+              card_calc_goal = card_goal_target
+            elif (
+                card_goal_type == "Százalékos növekedés (%)" and len(card_y) > 0
+            ):
+              card_calc_goal = card_y[-1] * (1 + card_goal_target / 100)
 
-          with cols[j]:
-            with st.container(border=True):
-              h_col1, h_col2 = st.columns([3, 1])
-              with h_col1:
-                st.markdown(f"### **{s_name}**")
-                st.caption(
-                    f"📁 **Részleg:** {s_group} | 👤 **Assigned to:**"
-                    f" {assigned_str}"
-                )
-              with h_col2:
-                color_map = {
-                    "green": "🟢",
-                    "blue": "🔵",
-                    "yellow": "🟡",
-                    "orange": "🟠",
-                    "red": "🔴",
-                    "gray": "⚪",
-                }
-                st.markdown(
-                    "<div style='text-align: right; font-weight: bold;"
-                    f" font-size: 14px;'>{color_map.get(condition_color, '⚪')}"
-                    f" {condition_text}</div>",
-                    unsafe_allow_html=True,
-                )
+            condition_text, condition_color = calculate_stat_condition(
+                s_data_raw, card_surv_val
+            )
 
-              if card_items:
-                fig_card = go.Figure()
-                x_num = list(range(len(card_items)))
-                c_notes = [
-                    item[2] if len(item) > 2 else "" for item in card_items
-                ]
-
-                for k in range(len(card_items) - 1):
-                  x1, y1 = x_num[k], card_y[k]
-                  x2, y2 = x_num[k + 1], card_y[k + 1]
-                  color = (
-                      "#00C853"
-                      if (y2 < y1 if s_inverted else y2 > y1)
-                      else "#FF1744"
+            with cols[j]:
+              with st.container(border=True):
+                h_col1, h_col2 = st.columns([3, 1])
+                with h_col1:
+                  st.markdown(f"### **{s_name}**")
+                  st.caption(
+                      f"📁 **Részleg:** {s_group} | 👤 **Assigned to:**"
+                      f" {assigned_str}"
                   )
+                with h_col2:
+                  color_map = {
+                      "green": "🟢",
+                      "blue": "🔵",
+                      "yellow": "🟡",
+                      "orange": "🟠",
+                      "red": "🔴",
+                      "gray": "⚪",
+                  }
+                  st.markdown(
+                      "<div style='text-align: right; font-weight: bold;"
+                      f" font-size: 14px;'>{color_map.get(condition_color, '⚪')}"
+                      f" {condition_text}</div>",
+                      unsafe_allow_html=True,
+                  )
+
+                if card_items:
+                  fig_card = go.Figure()
+                  x_num = list(range(len(card_items)))
+                  c_notes = [
+                      item[2] if len(item) > 2 else "" for item in card_items
+                  ]
+
+                  for k in range(len(card_items) - 1):
+                    x1, y1 = x_num[k], card_y[k]
+                    x2, y2 = x_num[k + 1], card_y[k + 1]
+                    color = (
+                        "#00C853"
+                        if (y2 < y1 if s_inverted else y2 > y1)
+                        else "#FF1744"
+                    )
+                    fig_card.add_trace(
+                        go.Scatter(
+                            x=[x1, x2],
+                            y=[y1, y2],
+                            mode="lines",
+                            line=dict(color=color, width=3.5),
+                            showlegend=False,
+                            hoverinfo="skip",
+                        )
+                    )
+
+                  if card_surv_val > 0:
+                    fig_card.add_hline(
+                        y=card_surv_val,
+                        line_dash="solid",
+                        line_color="#4B5563",
+                        line_width=2.5,
+                    )
+
+                  if card_goal_type != "Nincs" and card_calc_goal > 0:
+                    fig_card.add_hline(
+                        y=card_calc_goal,
+                        line_dash="dash",
+                        line_color="#C5A059",
+                        line_width=2,
+                    )
+
+                  formatted_t = [fmt_num(y, s_unit) for y in card_y]
+                  x_fmt = [
+                      pd.to_datetime(
+                          str(item[0]), format="mixed", errors="coerce"
+                      ).strftime("%b %d")
+                      for item in card_items
+                  ]
+                  hover_c = [
+                      (
+                          f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}"
+                          if n
+                          else f"Dátum: {dt}<br>Érték: {txt}"
+                      )
+                      for dt, txt, n in zip(x_fmt, formatted_t, c_notes)
+                  ]
+
                   fig_card.add_trace(
                       go.Scatter(
-                          x=[x1, x2],
-                          y=[y1, y2],
-                          mode="lines",
-                          line=dict(color=color, width=3.5),
+                          x=x_num,
+                          y=card_y,
+                          mode="markers",
+                          marker=dict(size=8, color="#1E293B"),
+                          cliponaxis=False,
+                          hovertext=hover_c,
+                          hoverinfo="text",
                           showlegend=False,
-                          hoverinfo="skip",
                       )
                   )
 
-                if card_surv_val > 0:
-                  fig_card.add_hline(
-                      y=card_surv_val,
-                      line_dash="solid",
-                      line_color="#4B5563",
-                      line_width=2.5,
-                  )
-
-                if card_goal_type != "Nincs" and card_calc_goal > 0:
-                  fig_card.add_hline(
-                      y=card_calc_goal,
-                      line_dash="dash",
-                      line_color="#C5A059",
-                      line_width=2,
-                  )
-
-                formatted_t = [fmt_num(y, s_unit) for y in card_y]
-                x_fmt = [
-                    pd.to_datetime(
-                        str(item[0]), format="mixed", errors="coerce"
-                    ).strftime("%b %d")
-                    for item in card_items
-                ]
-                hover_c = [
-                    (
-                        f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}"
-                        if n
-                        else f"Dátum: {dt}<br>Érték: {txt}"
-                    )
-                    for dt, txt, n in zip(x_fmt, formatted_t, c_notes)
-                ]
-
-                fig_card.add_trace(
-                    go.Scatter(
-                        x=x_num,
-                        y=card_y,
-                        mode="markers",
-                        marker=dict(size=8, color="#1E293B"),
-                        cliponaxis=False,
-                        hovertext=hover_c,
-                        hoverinfo="text",
-                        showlegend=False,
-                    )
-                )
-
-                for x_val, y_val, txt in zip(x_num, card_y, formatted_t):
-                  fig_card.add_annotation(
-                      x=x_val,
-                      y=y_val,
-                      text=txt,
-                      showarrow=False,
-                      yshift=8,
-                      xshift=5,
-                      textangle=-75,
-                      font=dict(size=9, color="#000000", family="Arial Black"),
-                      xanchor="center",
-                      yanchor="bottom",
-                  )
-
-                yaxis_card = dict(
-                    showgrid=True,
-                    gridcolor="#F1F5F9",
-                    gridwidth=1.5,
-                    tickfont=dict(color="#000", size=11, family="Arial Black"),
-                    showline=True,
-                    linecolor="#000",
-                    linewidth=1.5,
-                    mirror=True,
-                )
-                if s_inverted:
-                  yaxis_card["autorange"] = "reversed"
-                else:
-                  yaxis_card["rangemode"] = "tozero"
-
-                fig_card.update_layout(
-                    height=300,
-                    plot_bgcolor="white",
-                    paper_bgcolor="white",
-                    margin=dict(t=10, b=40, l=40, r=20),
-                    xaxis=dict(
-                        tickmode="array",
-                        tickvals=x_num,
-                        ticktext=x_fmt,
-                        tickangle=-30,
-                        showgrid=True,
-                        gridcolor="#F1F5F9",
-                        gridwidth=1.5,
-                        tickfont=dict(
-                            color="#000", size=10, family="Arial Black"
+                  for x_val, y_val, txt in zip(x_num, card_y, formatted_t):
+                    fig_card.add_annotation(
+                        x=x_val,
+                        y=y_val,
+                        text=txt,
+                        showarrow=False,
+                        yshift=8,
+                        xshift=5,
+                        textangle=-75,
+                        font=dict(
+                            size=9, color="#000000", family="Arial Black"
                         ),
-                        showline=True,
-                        linecolor="#000",
-                        linewidth=1.5,
-                        mirror=True,
-                    ),
-                    yaxis=yaxis_card,
-                )
-                st.plotly_chart(
-                    fig_card,
-                    use_container_width=True,
-                    config={"displayModeBar": False},
-                )
-              else:
-                st.info("Nincs megjeleníthető adat.")
+                        xanchor="center",
+                        yanchor="bottom",
+                    )
 
-# 4. ÚJ STATISZTIKA LÉTREHOZÁSA
-elif selected_menu == "➕ Új Statisztika Kategória Létrehozása":
+                  yaxis_card = dict(
+                      showgrid=True,
+                      gridcolor="#F1F5F9",
+                      gridwidth=1.5,
+                      tickfont=dict(
+                          color="#000", size=11, family="Arial Black"
+                      ),
+                      showline=True,
+                      linecolor="#000",
+                      linewidth=1.5,
+                      mirror=True,
+                  )
+                  if s_inverted:
+                    yaxis_card["autorange"] = "reversed"
+                  else:
+                    yaxis_card["rangemode"] = "tozero"
+
+                  fig_card.update_layout(
+                      height=300,
+                      plot_bgcolor="white",
+                      paper_bgcolor="white",
+                      margin=dict(t=10, b=40, l=40, r=20),
+                      xaxis=dict(
+                          tickmode="array",
+                          tickvals=x_num,
+                          ticktext=x_fmt,
+                          tickangle=-30,
+                          showgrid=True,
+                          gridcolor="#F1F5F9",
+                          gridwidth=1.5,
+                          tickfont=dict(
+                              color="#000", size=10, family="Arial Black"
+                          ),
+                          showline=True,
+                          linecolor="#000",
+                          linewidth=1.5,
+                          mirror=True,
+                      ),
+                      yaxis=yaxis_card,
+                  )
+                  st.plotly_chart(
+                      fig_card,
+                      use_container_width=True,
+                      config={"displayModeBar": False},
+                  )
+                else:
+                  st.info("Nincs megjeleníthető adat.")
+
+# 4. ÚJ STATISZTIKA LÉTREHOZÁSA (CSAK ADMIN)
+elif selected_menu == "➕ Új Statisztika Létrehozása":
   st.title("➕ Új Statisztika Kategória Létrehozása")
-  st.write(
-      "Itt hozhatsz létre új adatsort és sorolhatod be a megfelelő részlegbe."
-  )
-
   groups_list = db.get(
       "groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
   )
@@ -1486,45 +1572,152 @@ elif selected_menu == "➕ Új Statisztika Kategória Létrehozása":
               "data": [],
           }
           save_data(st.session_state.db)
-          st.success(
-              f"Sikeresen létrehozva: {new_stat_name} ({new_stat_unit}) -"
-              f" Részleg: {new_stat_group}"
-          )
+          st.success(f"Sikeresen létrehozva: {new_stat_name}")
+          st.rerun()
         else:
           st.error("Ilyen nevű statisztika már létezik!")
       else:
         st.warning("Adj meg egy nevet!")
 
-# 5. ADMINISZTRÁCIÓ & ARCHÍVUM (ÚJ FELHASZNÁLÓI HOZZÁADÁSSAL)
+# 5. ADMINISZTRÁCIÓ & ARCHÍVUM (CSAK ADMIN)
 elif selected_menu == "⚙️ Adminisztráció & Archívum":
   st.title("⚙️ Rendszer Adminisztráció")
 
-  # --- ÚJ FELHASZNÁLÓ LÉTREHOZÁSA ---
-  st.subheader("👤 Új Felhasználó Hozzáadása")
-  with st.form("add_user_form", clear_on_submit=True):
-    col_u1, col_u2 = st.columns(2)
-    with col_u1:
-      new_username = st.text_input("Új felhasználónév:")
-    with col_u2:
-      new_password = st.text_input("Új jelszó:", type="password")
+  # --- 1. FELHASZNÁLÓK ÉS JOGOSULTSÁGOK KEZELÉSE ---
+  st.subheader("👥 Felhasználók & Jogosultságok Kezelése")
 
-    add_user_btn = st.form_submit_button("➕ Felhasználó Létrehozása")
+  col_u_add, col_u_edit = st.columns(2)
 
-    if add_user_btn:
-      if new_username and new_password:
-        if new_username in users_db:
-          st.error("Ez a felhasználónév már létezik!")
+  with col_u_add:
+    st.markdown("#### ➕ Új Felhasználó Hozzáadása")
+    with st.form("add_user_form", clear_on_submit=True):
+      new_username = st.text_input("Felhasználónév:")
+      new_password = st.text_input("Jelszó:", type="password")
+      new_role = st.selectbox(
+          "Jogosultság:",
+          ["user", "admin"],
+          format_func=lambda x: "👑 Admin" if x == "admin" else "👤 Sima felhasználó",
+      )
+      assigned_for_new = st.multiselect(
+          "Hozzárendelt Statisztikák:", options=all_stat_names
+      )
+
+      add_user_btn = st.form_submit_button("Felhasználó Létrehozása")
+      if add_user_btn:
+        if new_username and new_password:
+          if new_username in users_db:
+            st.error("Ez a felhasználónév már létezik!")
+          else:
+            users_db[new_username] = {
+                "password": new_password,
+                "role": new_role,
+                "assigned_stats": assigned_for_new,
+            }
+            save_users(users_db)
+            st.success(f"'{new_username}' felhasználó sikeresen létrehozva!")
+            st.rerun()
         else:
-          users_db[new_username] = new_password
+          st.warning("Minden mezőt tölts ki!")
+
+  with col_u_edit:
+    st.markdown("#### ✏️ Meglévő Felhasználó Módosítása")
+    selected_edit_user = st.selectbox(
+        "Válassz felhasználót:", options=list(users_db.keys())
+    )
+
+    if selected_edit_user:
+      u_data = users_db[selected_edit_user]
+      with st.form("edit_user_form"):
+        updated_pass = st.text_input(
+            "Új Jelszó (hagyja üresen ha nem változik):", type="password"
+        )
+        updated_role = st.selectbox(
+            "Jogosultság módosítása:",
+            ["user", "admin"],
+            index=0 if u_data.get("role", "user") == "user" else 1,
+            format_func=lambda x: (
+                "👑 Admin" if x == "admin" else "👤 Sima felhasználó"
+            ),
+        )
+        updated_assigned = st.multiselect(
+            "Hozzárendelt Statisztikák Módosítása:",
+            options=all_stat_names,
+            default=[
+                s
+                for s in u_data.get("assigned_stats", [])
+                if s in all_stat_names
+            ],
+        )
+
+        save_u_edit = st.form_submit_button("💾 Módosítások Mentése")
+        if save_u_edit:
+          if updated_pass:
+            users_db[selected_edit_user]["password"] = updated_pass
+          users_db[selected_edit_user]["role"] = updated_role
+          users_db[selected_edit_user]["assigned_stats"] = updated_assigned
           save_users(users_db)
           st.success(
-              f"'{new_username}' felhasználó sikeresen létrehozva és elmentve!"
+              f"'{selected_edit_user}' adatai frissítve! (Újra belépés után lép"
+              " életbe a felhasználónál)"
           )
-      else:
-        st.warning("Töltsd ki mindkét mezőt!")
+          st.rerun()
 
   st.markdown("---")
 
+  # --- 2. STATISZTIKA MEGERŐSÍTÉSES TÖRLESE ---
+  st.subheader("🗑️ Statisztika kategória végleges törlése")
+  stat_to_delete_cat = st.selectbox(
+      "Törlendő statisztika kategória:",
+      options=[""] + all_stat_names,
+      key="stat_del_select",
+  )
+
+  if "confirm_delete_stat" not in st.session_state:
+    st.session_state.confirm_delete_stat = None
+
+  if st.button("🗑️ Törlési Folyamat Indítása") and stat_to_delete_cat:
+    st.session_state.confirm_delete_stat = stat_to_delete_cat
+
+  # MEGERŐSÍTŐ ABLAK / PANEL
+  if (
+      st.session_state.confirm_delete_stat
+      and st.session_state.confirm_delete_stat == stat_to_delete_cat
+  ):
+    st.warning(
+        f"⚠️ **BIZTOSAN TÖRÖLNI AKAROD A(Z) '{stat_to_delete_cat}'"
+        " STATISZTIKÁT?**\nEz a művelet végleges és az összes adat elveszik!"
+    )
+    col_confirm1, col_confirm2 = st.columns(2)
+    with col_confirm1:
+      if st.button("✅ Igen, biztosan törlöm véglegesen", type="primary"):
+        target = st.session_state.confirm_delete_stat
+        if target in st.session_state.db["stats"]:
+          del st.session_state.db["stats"][target]
+          if (
+              "settings" in st.session_state.db
+              and target in st.session_state.db["settings"]
+          ):
+            del st.session_state.db["settings"][target]
+          save_data(st.session_state.db)
+
+          # Töröljük a felhasználói hozzárendelésekből is
+          for u_k in users_db:
+            if target in users_db[u_k].get("assigned_stats", []):
+              users_db[u_k]["assigned_stats"].remove(target)
+          save_users(users_db)
+
+          st.session_state.confirm_delete_stat = None
+          st.success(f"'{target}' sikeresen törölve!")
+          st.rerun()
+
+    with col_confirm2:
+      if st.button("❌ Mégse, mégsem törlöm"):
+        st.session_state.confirm_delete_stat = None
+        st.rerun()
+
+  st.markdown("---")
+
+  # --- 3. CSOPORTOK KEZELÉSE ---
   st.subheader("📁 Csoportok / Részlegek Kezelése")
   col_g1, col_g2 = st.columns(2)
   with col_g1:
@@ -1542,7 +1735,6 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
         st.warning("Add meg a nevet vagy már létezik ilyen részleg!")
 
   with col_g2:
-    st.markdown("#### Meglévő részlegek törlése")
     current_groups_list = db.get("groups", [])
     group_to_delete = st.selectbox(
         "Törlendő részleg:",
@@ -1562,24 +1754,8 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
         st.rerun()
 
   st.markdown("---")
-  st.subheader("🗑️ Statisztika kategória végleges törlése")
-  stat_to_delete_cat = st.selectbox(
-      "Törlendő statisztika kategória:",
-      options=all_stat_names if all_stat_names else [""],
-  )
-  if st.button("🗑️ Statisztika Törlése") and stat_to_delete_cat:
-    if stat_to_delete_cat in st.session_state.db["stats"]:
-      del st.session_state.db["stats"][stat_to_delete_cat]
-      if (
-          "settings" in st.session_state.db
-          and stat_to_delete_cat in st.session_state.db["settings"]
-      ):
-        del st.session_state.db["settings"][stat_to_delete_cat]
-      save_data(st.session_state.db)
-      st.success(f"'{stat_to_delete_cat}' statisztika sikeresen törölve!")
-      st.rerun()
 
-  st.markdown("---")
+  # --- 4. ARCHÍVUM KEZELÉSE ---
   st.subheader("📂 Archívum kezelése")
   archive_db = load_archive()
 
