@@ -396,29 +396,36 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         key=f"goal_val_{selected_stat}_{indiv_agg}",
     )
 
+    # ITT MENTJÜK A BEÁLLÍTÁSOKAT BIZTOSAN A SESSION STATE-BE ÉS JSON-BA
     if st.sidebar.button(
         "💾 Beállítások Mentése", key=f"save_btn_{selected_stat}"
     ):
-      if "settings" not in db:
-        db["settings"] = {}
-      if selected_stat not in db["settings"]:
-        db["settings"][selected_stat] = {}
+      if "settings" not in st.session_state.db:
+        st.session_state.db["settings"] = {}
+      if selected_stat not in st.session_state.db["settings"]:
+        st.session_state.db["settings"][selected_stat] = {}
 
-      db["settings"][selected_stat]["person_name"] = person_name
-      db["settings"][selected_stat]["person_post"] = person_post
-      db["settings"][selected_stat]["chart_height"] = chart_height
-      db["settings"][selected_stat]["margin_l"] = margin_l
-      db["settings"][selected_stat]["margin_r"] = margin_r
-      db["settings"][selected_stat]["margin_t"] = margin_t
-      db["settings"][selected_stat]["margin_b"] = margin_b
-      db["settings"][selected_stat][
+      st.session_state.db["settings"][selected_stat][
+          "person_name"
+      ] = person_name
+      st.session_state.db["settings"][selected_stat][
+          "person_post"
+      ] = person_post
+      st.session_state.db["settings"][selected_stat][
+          "chart_height"
+      ] = chart_height
+      st.session_state.db["settings"][selected_stat]["margin_l"] = margin_l
+      st.session_state.db["settings"][selected_stat]["margin_r"] = margin_r
+      st.session_state.db["settings"][selected_stat]["margin_t"] = margin_t
+      st.session_state.db["settings"][selected_stat]["margin_b"] = margin_b
+      st.session_state.db["settings"][selected_stat][
           "show_acc_in_brackets"
       ] = show_acc_in_brackets
-      db["settings"][selected_stat][
+      st.session_state.db["settings"][selected_stat][
           "initial_accumulated_val"
       ] = initial_accumulated_val
 
-      db["settings"][selected_stat][indiv_agg] = {
+      st.session_state.db["settings"][selected_stat][indiv_agg] = {
           "ymin": ymin,
           "ymax": ymax,
           "ystep": ystep,
@@ -429,8 +436,10 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
           "goal_val_target": goal_value,
       }
 
-      db["stats"][selected_stat]["inverted"] = is_stat_inverted_check
-      save_data(db)
+      st.session_state.db["stats"][selected_stat][
+          "inverted"
+      ] = is_stat_inverted_check
+      save_data(st.session_state.db)
       st.sidebar.success(f"Beállítások elmentve ({indiv_agg})!")
       st.rerun()
 
@@ -779,7 +788,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         else:
           yaxis_dict["rangemode"] = "tozero"
 
-        # A legelső pont pontosan a bal szélen (0-tól) indul
+        # A legelső pont pontosan a bal szélről indul
         xaxis_range = [0, max(unique_x) + 0.5] if len(unique_x) > 1 else [0, 0.5]
 
         layout_args = dict(
@@ -850,16 +859,16 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         full_dt_str = (
             f"{input_date.strftime('%Y-%m-%d')} {input_time.strftime('%H:%M')}"
         )
-        db["stats"][selected_stat]["data"].append(
+        st.session_state.db["stats"][selected_stat]["data"].append(
             [full_dt_str, input_val, input_note]
         )
-        db["stats"][selected_stat]["data"] = sorted(
-            db["stats"][selected_stat]["data"],
+        st.session_state.db["stats"][selected_stat]["data"] = sorted(
+            st.session_state.db["stats"][selected_stat]["data"],
             key=lambda x: pd.to_datetime(
                 str(x[0]), format="mixed", errors="coerce"
             ),
         )
-        save_data(db)
+        save_data(st.session_state.db)
         st.success("Adat hozzáadva!")
         st.rerun()
 
@@ -959,8 +968,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 str(x[0]), format="mixed", errors="coerce"
             ),
         )
-        db["stats"][selected_stat]["data"] = updated_data
-        save_data(db)
+        st.session_state.db["stats"][selected_stat]["data"] = updated_data
+        save_data(st.session_state.db)
         st.success("Táblázat sikeresen elmentve!")
         st.rerun()
     else:
@@ -1168,7 +1177,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
 
 # 3. ÖSSZESÍTŐ DASHBOARD
 elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
-  st.title("📋 Teljesítménymérő Statisztikák Dashboard")
+  st.title("📋 Teljesítnémérő Statisztikák Dashboard")
 
   all_groups = db.get(
       "groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
@@ -1436,14 +1445,14 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
     submit = st.form_submit_button("Létrehozás")
     if submit:
       if new_stat_name:
-        if new_stat_name not in db["stats"]:
-          db["stats"][new_stat_name] = {
+        if new_stat_name not in st.session_state.db["stats"]:
+          st.session_state.db["stats"][new_stat_name] = {
               "unit": new_stat_unit,
               "group": new_stat_group,
               "inverted": is_new_inverted,
               "data": [],
           }
-          save_data(db)
+          save_data(st.session_state.db)
           st.success(
               f"Sikeresen létrehozva: {new_stat_name} ({new_stat_unit}) -"
               f" Részleg: {new_stat_group}"
@@ -1462,9 +1471,12 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
   with col_g1:
     new_group_name = st.text_input("Új részleg / csoport neve:")
     if st.button("➕ Részleg Hozzáadása"):
-      if new_group_name and new_group_name not in db["groups"]:
-        db["groups"].append(new_group_name)
-        save_data(db)
+      if (
+          new_group_name
+          and new_group_name not in st.session_state.db["groups"]
+      ):
+        st.session_state.db["groups"].append(new_group_name)
+        save_data(st.session_state.db)
         st.success(f"'{new_group_name}' sikeresen létrehozva!")
         st.rerun()
       else:
@@ -1478,12 +1490,15 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
         options=current_groups_list if current_groups_list else [""],
     )
     if st.button("🗑️ Részleg Törlése") and group_to_delete:
-      if group_to_delete in db["groups"]:
-        db["groups"].remove(group_to_delete)
-        for s_key in db["stats"]:
-          if db["stats"][s_key].get("group") == group_to_delete:
-            db["stats"][s_key]["group"] = "Egyéb"
-        save_data(db)
+      if group_to_delete in st.session_state.db["groups"]:
+        st.session_state.db["groups"].remove(group_to_delete)
+        for s_key in st.session_state.db["stats"]:
+          if (
+              st.session_state.db["stats"][s_key].get("group")
+              == group_to_delete
+          ):
+            st.session_state.db["stats"][s_key]["group"] = "Egyéb"
+        save_data(st.session_state.db)
         st.success(f"'{group_to_delete}' részleg törölve!")
         st.rerun()
 
@@ -1494,11 +1509,14 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
       options=all_stat_names if all_stat_names else [""],
   )
   if st.button("🗑️ Statisztika Törlése") and stat_to_delete_cat:
-    if stat_to_delete_cat in db["stats"]:
-      del db["stats"][stat_to_delete_cat]
-      if "settings" in db and stat_to_delete_cat in db["settings"]:
-        del db["settings"][stat_to_delete_cat]
-      save_data(db)
+    if stat_to_delete_cat in st.session_state.db["stats"]:
+      del st.session_state.db["stats"][stat_to_delete_cat]
+      if (
+          "settings" in st.session_state.db
+          and stat_to_delete_cat in st.session_state.db["settings"]
+      ):
+        del st.session_state.db["settings"][stat_to_delete_cat]
+      save_data(st.session_state.db)
       st.success(f"'{stat_to_delete_cat}' statisztika sikeresen törölve!")
       st.rerun()
 
@@ -1524,8 +1542,10 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
           "Visszaállítandó elem:", options=list(archive_db.keys())
       )
       if st.button("🔄 Visszaállítás"):
-        db["stats"][stat_to_restore] = archive_db[stat_to_restore]
-        save_data(db)
+        st.session_state.db["stats"][stat_to_restore] = archive_db[
+            stat_to_restore
+        ]
+        save_data(st.session_state.db)
         st.success("Visszaállítva!")
         st.rerun()
     else:
