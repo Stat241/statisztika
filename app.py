@@ -21,7 +21,6 @@ st.markdown(
             margin: 5mm !important;
         }
         
-        /* Rejtett elemek nyomtatáskor */
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -34,7 +33,6 @@ st.markdown(
             display: none !important;
         }
         
-        /* Tiszta keret az A4 laphoz */
         html, body, [data-testid="stAppViewContainer"], .main, .block-container, [data-testid="stVerticalBlock"], .stTabs, [data-testid="stTabContent"] {
             width: 100% !important;
             max-width: 100% !important;
@@ -148,7 +146,6 @@ def save_archive(archive_data):
     json.dump(archive_data, f, ensure_ascii=False, indent=2)
 
 
-# ================= L. RON HUBBARD TREND ÉS ÁLLAPOT SZÁMÍTÁS =================
 def calculate_stat_condition(data, survival_line=0):
   if not data or len(data) < 1:
     return "Nincs adat", "gray"
@@ -157,14 +154,12 @@ def calculate_stat_condition(data, survival_line=0):
     sorted_d = sorted(data, key=lambda x: str(x[0]))
     last_val = float(sorted_d[-1][1])
 
-    # 1. Életvonal vizsgálata (Hubbard szerinti Nem-létezés)
     if survival_line > 0 and last_val < survival_line:
       return "Nem-létezés (Életvonal alatt)", "red"
 
     if len(sorted_d) < 2:
       return "Normál trend", "green"
 
-    # 2. Hubbard-féle 4 hetes / 4 periódusos trend elemzése
     window = sorted_d[-4:] if len(sorted_d) >= 4 else sorted_d
     vals = [float(item[1]) for item in window]
 
@@ -232,7 +227,6 @@ st.sidebar.markdown("---")
 
 # ================= MODULOK =================
 
-# 1. EGYEDI STATISZTIKA NÉZET
 if selected_menu == "📊 Egyedi Statisztika Nézet":
   if not stat_names:
     st.warning("⚠️ Nincs elérhető statisztikád. Hozz létre egyet a menüben!")
@@ -244,53 +238,20 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     stat_settings = db.get("settings", {}).get(selected_stat, {})
     is_inverted = db["stats"][selected_stat].get("inverted", False)
 
-    if f"pname_{selected_stat}" not in st.session_state:
-      st.session_state[f"pname_{selected_stat}"] = stat_settings.get(
-          "person_name", "Bíró Laura"
-      )
-    if f"ppost_{selected_stat}" not in st.session_state:
-      st.session_state[f"ppost_{selected_stat}"] = stat_settings.get(
-          "person_post", "DIV1"
-      )
-    if f"inv_{selected_stat}" not in st.session_state:
-      st.session_state[f"inv_{selected_stat}"] = is_inverted
-    if f"ch_{selected_stat}" not in st.session_state:
-      st.session_state[f"ch_{selected_stat}"] = int(
-          stat_settings.get("chart_height", 550)
-      )
-    if f"ml_{selected_stat}" not in st.session_state:
-      st.session_state[f"ml_{selected_stat}"] = int(
-          stat_settings.get("margin_l", 60)
-      )
-    if f"mr_{selected_stat}" not in st.session_state:
-      st.session_state[f"mr_{selected_stat}"] = int(
-          stat_settings.get("margin_r", 100)
-      )
-    if f"mt_{selected_stat}" not in st.session_state:
-      st.session_state[f"mt_{selected_stat}"] = int(
-          stat_settings.get("margin_t", 130)
-      )
-    if f"mb_{selected_stat}" not in st.session_state:
-      st.session_state[f"mb_{selected_stat}"] = int(
-          stat_settings.get("margin_b", 90)
-      )
-    if f"show_acc_{selected_stat}" not in st.session_state:
-      st.session_state[f"show_acc_{selected_stat}"] = stat_settings.get(
-          "show_acc_in_brackets", False
-      )
-    if f"init_acc_{selected_stat}" not in st.session_state:
-      st.session_state[f"init_acc_{selected_stat}"] = float(
-          stat_settings.get("initial_accumulated_val", 0.0)
-      )
-
     person_name = st.sidebar.text_input(
-        "Név (Fejlécbe):", key=f"pname_{selected_stat}"
+        "Név (Fejlécbe):",
+        value=stat_settings.get("person_name", "Bíró Laura"),
+        key=f"pname_{selected_stat}",
     )
     person_post = st.sidebar.text_input(
-        "Poszt (Fejlécbe):", key=f"ppost_{selected_stat}"
+        "Poszt (Fejlécbe):",
+        value=stat_settings.get("person_post", "DIV1"),
+        key=f"ppost_{selected_stat}",
     )
     is_stat_inverted_check = st.sidebar.checkbox(
-        "Fordított statisztika (0 felül van)", key=f"inv_{selected_stat}"
+        "Fordított statisztika (0 felül van)",
+        value=is_inverted,
+        key=f"inv_{selected_stat}",
     )
 
     st.sidebar.markdown("---")
@@ -299,6 +260,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         "Grafikon magassága (px):",
         min_value=300,
         max_value=900,
+        value=int(stat_settings.get("chart_height", 550)),
         step=10,
         key=f"ch_{selected_stat}",
     )
@@ -306,17 +268,29 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     col_m1, col_m2 = st.sidebar.columns(2)
     with col_m1:
       margin_l = st.number_input(
-          "Bal margó (px):", step=5, key=f"ml_{selected_stat}"
+          "Bal margó (px):",
+          value=int(stat_settings.get("margin_l", 60)),
+          step=5,
+          key=f"ml_{selected_stat}",
       )
       margin_t = st.number_input(
-          "Felső margó (px):", step=5, key=f"mt_{selected_stat}"
+          "Felső margó (px):",
+          value=int(stat_settings.get("margin_t", 130)),
+          step=5,
+          key=f"mt_{selected_stat}",
       )
     with col_m2:
       margin_r = st.number_input(
-          "Jobb margó (px):", step=5, key=f"mr_{selected_stat}"
+          "Jobb margó (px):",
+          value=int(stat_settings.get("margin_r", 100)),
+          step=5,
+          key=f"mr_{selected_stat}",
       )
       margin_b = st.number_input(
-          "Alsó margó (px):", step=5, key=f"mb_{selected_stat}"
+          "Alsó margó (px):",
+          value=int(stat_settings.get("margin_b", 90)),
+          step=5,
+          key=f"mb_{selected_stat}",
       )
 
     st.sidebar.markdown("---")
@@ -326,107 +300,89 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         "Heti (Csütörtöki zárás 14:00)",
         "Havi összesítés",
     ]
-    if (
-        f"indiv_agg_view_{selected_stat}" not in st.session_state
-        or st.session_state[f"indiv_agg_view_{selected_stat}"] not in valid_aggs
-    ):
-      st.session_state[f"indiv_agg_view_{selected_stat}"] = "Napi adatok"
-
     indiv_agg = st.sidebar.selectbox(
         "Grafikon nézet:", valid_aggs, key=f"indiv_agg_view_{selected_stat}"
     )
 
     mode_settings = stat_settings.get(indiv_agg, {})
-
     valid_surv = ["Nincs", "Fix érték (db/Ft)"]
-    surv_val_st = mode_settings.get("survival_type", "Nincs")
-    if surv_val_st not in valid_surv:
-      surv_val_st = "Nincs"
-
     valid_goals = ["Nincs", "Fix érték (db/Ft)", "Százalékos növekedés (%)"]
-    goal_val_st = mode_settings.get("goal_type", "Nincs")
-    if goal_val_st not in valid_goals:
-      goal_val_st = "Nincs"
-
-    if f"ymin_{selected_stat}_{indiv_agg}" not in st.session_state:
-      st.session_state[f"ymin_{selected_stat}_{indiv_agg}"] = str(
-          mode_settings.get("ymin", "")
-      )
-    if f"ymax_{selected_stat}_{indiv_agg}" not in st.session_state:
-      st.session_state[f"ymax_{selected_stat}_{indiv_agg}"] = str(
-          mode_settings.get("ymax", "")
-      )
-    if f"ystep_{selected_stat}_{indiv_agg}" not in st.session_state:
-      st.session_state[f"ystep_{selected_stat}_{indiv_agg}"] = str(
-          mode_settings.get("ystep", "")
-      )
-    if (
-        f"surv_type_{selected_stat}_{indiv_agg}" not in st.session_state
-        or st.session_state[f"surv_type_{selected_stat}_{indiv_agg}"]
-        not in valid_surv
-    ):
-      st.session_state[f"surv_type_{selected_stat}_{indiv_agg}"] = surv_val_st
-    if f"surv_val_{selected_stat}_{indiv_agg}" not in st.session_state:
-      st.session_state[f"surv_val_{selected_stat}_{indiv_agg}"] = float(
-          mode_settings.get("survival_value", 0.0)
-      )
-    if f"show_surv_{selected_stat}_{indiv_agg}" not in st.session_state:
-      st.session_state[f"show_surv_{selected_stat}_{indiv_agg}"] = (
-          mode_settings.get("show_survival", True)
-      )
-    if (
-        f"goal_type_{selected_stat}_{indiv_agg}" not in st.session_state
-        or st.session_state[f"goal_type_{selected_stat}_{indiv_agg}"]
-        not in valid_goals
-    ):
-      st.session_state[f"goal_type_{selected_stat}_{indiv_agg}"] = goal_val_st
-    if f"goal_val_{selected_stat}_{indiv_agg}" not in st.session_state:
-      st.session_state[f"goal_val_{selected_stat}_{indiv_agg}"] = float(
-          mode_settings.get("goal_val_target", 0.0)
-      )
 
     st.sidebar.markdown("---")
     st.sidebar.subheader(f"📐 Skála Tengely Beállítások ({indiv_agg})")
     col_min, col_max, col_step = st.sidebar.columns(3)
     with col_min:
-      ymin = st.text_input("Min", key=f"ymin_{selected_stat}_{indiv_agg}")
+      ymin = st.text_input(
+          "Min",
+          value=str(mode_settings.get("ymin", "")),
+          key=f"ymin_{selected_stat}_{indiv_agg}",
+      )
     with col_max:
-      ymax = st.text_input("Max", key=f"ymax_{selected_stat}_{indiv_agg}")
+      ymax = st.text_input(
+          "Max",
+          value=str(mode_settings.get("ymax", "")),
+          key=f"ymax_{selected_stat}_{indiv_agg}",
+      )
     with col_step:
-      ystep = st.text_input("Lépés", key=f"ystep_{selected_stat}_{indiv_agg}")
+      ystep = st.text_input(
+          "Lépés",
+          value=str(mode_settings.get("ystep", "")),
+          key=f"ystep_{selected_stat}_{indiv_agg}",
+      )
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("🔄 Akkumulált összeg zárójelben")
     show_acc_in_brackets = st.sidebar.checkbox(
         "Akkumulált összeg megjelenítése a pontok alatt",
+        value=stat_settings.get("show_acc_in_brackets", False),
         key=f"show_acc_{selected_stat}",
     )
     initial_accumulated_val = st.sidebar.number_input(
-        "Kezdő alap:", step=1.0, key=f"init_acc_{selected_stat}"
+        "Kezdő alap:",
+        value=float(stat_settings.get("initial_accumulated_val", 0.0)),
+        step=1.0,
+        key=f"init_acc_{selected_stat}",
     )
 
     st.sidebar.markdown("---")
     st.sidebar.subheader(f"🛡️ Életvonal ({indiv_agg})")
+    surv_type_val = mode_settings.get("survival_type", "Nincs")
     survival_type = st.sidebar.selectbox(
         "Életvonal típusa:",
         valid_surv,
+        index=valid_surv.index(surv_type_val)
+        if surv_type_val in valid_surv
+        else 0,
         key=f"surv_type_{selected_stat}_{indiv_agg}",
     )
     survival_value = st.sidebar.number_input(
-        "Életvonal értéke:", step=1.0, key=f"surv_val_{selected_stat}_{indiv_agg}"
+        "Életvonal értéke:",
+        value=float(mode_settings.get("survival_value", 0.0)),
+        step=1.0,
+        key=f"surv_val_{selected_stat}_{indiv_agg}",
     )
     show_survival_line = st.sidebar.checkbox(
         "Életvonal rajzolása a grafikonra",
+        value=mode_settings.get("show_survival", True),
         key=f"show_surv_{selected_stat}_{indiv_agg}",
     )
 
     st.sidebar.markdown("---")
     st.sidebar.subheader(f"🎯 Célkitűzés ({indiv_agg})")
+    goal_type_val = mode_settings.get("goal_type", "Nincs")
     goal_type = st.sidebar.selectbox(
-        "Cél típusa:", valid_goals, key=f"goal_type_{selected_stat}_{indiv_agg}"
+        "Cél típusa:",
+        valid_goals,
+        index=valid_goals.index(goal_type_val)
+        if goal_type_val in valid_goals
+        else 0,
+        key=f"goal_type_{selected_stat}_{indiv_agg}",
     )
     goal_value = st.sidebar.number_input(
-        "Cél mértéke:", step=1.0, key=f"goal_val_{selected_stat}_{indiv_agg}"
+        "Cél mértéke:",
+        value=float(mode_settings.get("goal_val_target", 0.0)),
+        step=1.0,
+        key=f"goal_val_{selected_stat}_{indiv_agg}",
     )
 
     if st.sidebar.button(
@@ -570,7 +526,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         def get_bucket_type(row):
           dt = row["Sort_Key"]
-          if dt.weekday() == 3:  # Csütörtök
+          if dt.weekday() == 3:
             if dt.hour > 14 or (dt.hour == 14 and dt.minute > 0):
               return "post_14"
             else:
@@ -641,7 +597,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         accumulated_vals.append(running_tot)
 
     y_vals_temp = [item["val"] for item in raw_items] if raw_items else []
-
     calc_survival_val = (
         survival_value if survival_type == "Fix érték (db/Ft)" else 0.0
     )
@@ -867,8 +822,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
     st.markdown("---")
 
-    # --- ADATKEZELÉS & TÁBLÁZAT ---
-    st.subheader(f"📋 Adatkezelés & Táblázat ({selected_stat})")
+    # --- ÚJ ADAT HOZZÁADÁSA ---
+    st.subheader(f"➕ Új Adat Hozzáadása ({selected_stat})")
 
     with st.form("add_data_form", clear_on_submit=True):
       col_d, col_t = st.columns(2)
@@ -895,24 +850,17 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             ),
         )
         save_data(db)
+        st.success("Adat hozzáadva!")
         st.rerun()
 
     st.markdown("---")
-    st.subheader("📋 Adat-táblázat (Időrendbe rendezve)")
+
+    # --- ADAT-TÁBLÁZAT ÉS MÓDOSÍTÁS ---
+    st.subheader("📋 Adat-táblázat Szerkesztése (Időrendben)")
 
     stat_data_raw = db["stats"][selected_stat]["data"]
 
     if stat_data_raw:
-      try:
-        stat_data_raw = sorted(
-            stat_data_raw,
-            key=lambda x: pd.to_datetime(
-                str(x[0]), format="mixed", errors="coerce"
-            ),
-        )
-      except Exception:
-        pass
-
       table_rows = []
       for item in stat_data_raw:
         dt_str = str(item[0]).strip()
@@ -944,59 +892,66 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
           ],
       )
 
-      edited_df = st.data_editor(
-          df_raw,
-          num_rows="dynamic",
-          use_container_width=True,
-          column_config={
-              "Dátum": st.column_config.TextColumn(
-                  "Dátum (ÉÉÉÉ-HH-NN)", help="pl. 2026-10-06"
-              ),
-              "Időpont": st.column_config.TextColumn(
-                  "Időpont (ÓÓ:PP)", help="pl. 13:28"
-              ),
-          },
-          key=f"editor_{selected_stat}",
-      )
-
-      updated_data = []
-      for _, row in edited_df.iterrows():
-        d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
-        t_val = (
-            str(row["Időpont"]).strip() if pd.notnull(row["Időpont"]) else "00:00"
+      with st.form(f"edit_table_form_{selected_stat}"):
+        edited_df = st.data_editor(
+            df_raw,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Dátum": st.column_config.TextColumn(
+                    "Dátum (ÉÉÉÉ-HH-NN)", help="pl. 2026-10-06"
+                ),
+                "Időpont": st.column_config.TextColumn(
+                    "Időpont (ÓÓ:PP)", help="pl. 13:28"
+                ),
+            },
+            key=f"editor_{selected_stat}",
         )
-        if not t_val or t_val == "nan":
-          t_val = "00:00"
+        save_table_btn = st.form_submit_button(
+            "💾 Táblázat Módosításainak Mentése"
+        )
 
-        if d_val and d_val != "nan":
-          full_dt = f"{d_val} {t_val}".strip()
-          try:
-            v_val = (
-                float(row[f"Érték ({current_unit})"])
-                if pd.notnull(row[f"Érték ({current_unit})"])
-                else 0.0
-            )
-            if v_val.is_integer():
-              v_val = int(v_val)
-          except (ValueError, TypeError):
-            v_val = 0
-          n_val = (
-              str(row["Megjegyzés"]).strip()
-              if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan"
-              else ""
+      if save_table_btn:
+        updated_data = []
+        for _, row in edited_df.iterrows():
+          d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
+          t_val = (
+              str(row["Időpont"]).strip()
+              if pd.notnull(row["Időpont"])
+              else "00:00"
           )
-          updated_data.append([full_dt, v_val, n_val])
+          if not t_val or t_val == "nan":
+            t_val = "00:00"
 
-      updated_data = sorted(
-          updated_data,
-          key=lambda x: pd.to_datetime(
-              str(x[0]), format="mixed", errors="coerce"
-          ),
-      )
+          if d_val and d_val != "nan":
+            full_dt = f"{d_val} {t_val}".strip()
+            try:
+              v_val = (
+                  float(row[f"Érték ({current_unit})"])
+                  if pd.notnull(row[f"Érték ({current_unit})"])
+                  else 0.0
+              )
+              if v_val.is_integer():
+                v_val = int(v_val)
+            except (ValueError, TypeError):
+              v_val = 0
+            n_val = (
+                str(row["Megjegyzés"]).strip()
+                if pd.notnull(row["Megjegyzés"])
+                and str(row["Megjegyzés"]) != "nan"
+                else ""
+            )
+            updated_data.append([full_dt, v_val, n_val])
 
-      if updated_data != stat_data_raw:
+        updated_data = sorted(
+            updated_data,
+            key=lambda x: pd.to_datetime(
+                str(x[0]), format="mixed", errors="coerce"
+            ),
+        )
         db["stats"][selected_stat]["data"] = updated_data
         save_data(db)
+        st.success("Táblázat sikeresen elmentve!")
         st.rerun()
     else:
       st.info("Még nincsenek rögzített adatok ebben a statisztikában.")
@@ -1201,7 +1156,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
       )
       st.plotly_chart(fig, use_container_width=True)
 
-# 3. ÖSSZESÍTŐ DASHBOARD (KÁRTYA NÉZET + ÁLLAPOTOK)
+# 3. ÖSSZESÍTŐ DASHBOARD
 elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
   st.title("📋 Teljesítménymérő Statisztikák Dashboard")
 
@@ -1315,25 +1270,6 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     f" {condition_text}</div>",
                     unsafe_allow_html=True,
                 )
-
-              dates_parsed = (
-                  [
-                      pd.to_datetime(
-                          item[0], format="mixed", errors="coerce"
-                      ).date()
-                      for item in s_data_raw
-                      if item[0]
-                      and pd.notnull(
-                          pd.to_datetime(
-                              item[0], format="mixed", errors="coerce"
-                          )
-                      )
-                  ]
-                  if s_data_raw
-                  else []
-              )
-              min_d = min(dates_parsed) if dates_parsed else None
-              max_d = max(dates_parsed) if dates_parsed else None
 
               if card_items:
                 fig_card = go.Figure()
@@ -1465,26 +1401,6 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                 )
               else:
                 st.info("Nincs megjeleníthető adat.")
-
-              c_date1, c_date2 = st.columns(2)
-              with c_date1:
-                if min_d:
-                  st.date_input(
-                      "Mikortól:", value=min_d, key=f"from_{s_name}_{i}_{j}"
-                  )
-                else:
-                  st.text_input(
-                      "Mikortól:", value="", key=f"from_empty_{s_name}_{i}_{j}"
-                  )
-              with c_date2:
-                if max_d:
-                  st.date_input(
-                      "Meddig:", value=max_d, key=f"to_{s_name}_{i}_{j}"
-                  )
-                else:
-                  st.text_input(
-                      "Meddig:", value="", key=f"to_empty_{s_name}_{i}_{j}"
-                  )
 
 # 4. ÚJ STATISZTIKA LÉTREHOZÁSA
 elif selected_menu == "➕ Új Statisztika Létrehozása":
