@@ -72,7 +72,6 @@ def load_users():
     try:
       with open(USERS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-        # Formátum migráció ha régi sima szótár lett volna
         updated = {}
         for u, val in data.items():
           if isinstance(val, str):
@@ -80,18 +79,29 @@ def load_users():
                 "password": val,
                 "role": "admin" if u == "admin" else "user",
                 "assigned_stats": [],
+                "assigned_groups": [],
             }
           else:
+            if "assigned_groups" not in val:
+              val["assigned_groups"] = []
+            if "assigned_stats" not in val:
+              val["assigned_stats"] = []
             updated[u] = val
         return updated
     except Exception:
       pass
   return {
-      "admin": {"password": "admin123", "role": "admin", "assigned_stats": []},
+      "admin": {
+          "password": "admin123",
+          "role": "admin",
+          "assigned_stats": [],
+          "assigned_groups": [],
+      },
       "laura": {
           "password": "pass123",
           "role": "user",
-          "assigned_stats": ["Bruttó Beérkezett Bevétel"],
+          "assigned_stats": [],
+          "assigned_groups": ["Pénzügy"],
       },
   }
 
@@ -247,6 +257,8 @@ if "user_role" not in st.session_state:
   st.session_state.user_role = "user"
 if "assigned_stats" not in st.session_state:
   st.session_state.assigned_stats = []
+if "assigned_groups" not in st.session_state:
+  st.session_state.assigned_groups = []
 
 if not st.session_state.logged_in:
   st.title("🔐 Bejelentkezés a Rendszerbe")
@@ -266,6 +278,9 @@ if not st.session_state.logged_in:
         st.session_state.assigned_stats = users_db[input_user].get(
             "assigned_stats", []
         )
+        st.session_state.assigned_groups = users_db[input_user].get(
+            "assigned_groups", []
+        )
         st.success("Sikeres bejelentkezés!")
         st.rerun()
       else:
@@ -284,14 +299,22 @@ if "groups" not in db:
   save_data(db)
 
 all_stat_names = list(db["stats"].keys())
+all_groups = db.get(
+    "groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
+)
 
 # JOGOSULTSÁG ALAPJÁN ELÉRHETŐ STATISZTIKÁK SZŰRÉSE
 if st.session_state.user_role == "admin":
   stat_names = all_stat_names
 else:
-  stat_names = [
-      s for s in all_stat_names if s in st.session_state.assigned_stats
-  ]
+  user_assigned_s = set(st.session_state.assigned_stats)
+  user_assigned_g = set(st.session_state.assigned_groups)
+
+  stat_names = []
+  for s in all_stat_names:
+    s_group = db["stats"][s].get("group", "Egyéb")
+    if s in user_assigned_s or s_group in user_assigned_g:
+      stat_names.append(s)
 
 # ================= NAVIGÁCIÓ =================
 st.sidebar.title("📌 Navigáció")
@@ -308,11 +331,11 @@ if st.sidebar.button("🚪 Kijelentkezés"):
   st.session_state.username = ""
   st.session_state.user_role = "user"
   st.session_state.assigned_stats = []
+  st.session_state.assigned_groups = []
   st.rerun()
 
 st.sidebar.markdown("---")
 
-# Menüpontok összeállítása jogosultság alapján
 menu_options = [
     "📊 Egyedi Statisztika Nézet",
     "📈 Több Statisztika Összevetése",
@@ -344,7 +367,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
     stat_settings = db.get("settings", {}).get(selected_stat, {})
     is_inverted = db["stats"][selected_stat].get("inverted", False)
 
-    # HA ADMIN, MEGELENÍTJÜK A STRUKTUÁLIS ÉS FORMÁTUM BEÁLLÍTÁSOKAT
     if st.session_state.user_role == "admin":
       person_name = st.sidebar.text_input(
           "Név (Fejlécbe):",
@@ -503,7 +525,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
           key=f"goal_val_{selected_stat}_{indiv_agg}",
       )
 
-      # MENTÉS AUTOMATIKUSAN ADMINNAK
       if "settings" not in st.session_state.db:
         st.session_state.db["settings"] = {}
       if selected_stat not in st.session_state.db["settings"]:
@@ -558,7 +579,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
       goal_type = mode_settings.get("goal_type", "Nincs")
       goal_value = float(mode_settings.get("goal_val_target", 0.0))
 
-    # --- GRAFIKON NÉZET ---
     components.html(
         """
             <button onclick="window.parent.print()" style="
@@ -1287,19 +1307,32 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
         )
         st.plotly_chart(fig, use_container_width=True)
 
-# 3. ÖSSZESÍTŐ DASHBOARD
+# 3. ÖSSZESÍTŐ DASHBOARD (IDŐSZAKI BONTÁS KAPCSOLÓVAL)
 elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
   st.title("📋 Teljesítménymérő Statisztikák Dashboard")
 
   if not stat_names:
     st.warning("⚠️ Nincs számodra megjeleníthető statisztika.")
   else:
-    all_groups = db.get(
-        "groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
-    )
-    selected_group_filter = st.selectbox(
-        "Szűrés csoport / részleg szerint:", ["Összes csoport"] + all_groups
-    )
+    # --- IDŐSZAKI BONTÁS ÉS CSOPORT SZŰRŐ ---
+    col_dash_period, col_dash_group = st.columns([2, 2])
+    with col_dash_period:
+      dash_period = st.radio(
+          "📅 Időszaki Bontás A Dashboardon:",
+          [
+              "Nyers / Napi adatok",
+              "Heti (Cs 14:00)",
+              "Havi összesítés",
+              "Éves összesítés",
+          ],
+          horizontal=True,
+          key="dash_period_select",
+      )
+
+    with col_dash_group:
+      selected_group_filter = st.selectbox(
+          "Szűrés csoport / részleg szerint:", ["Összes csoport"] + all_groups
+      )
 
     col_search, _ = st.columns([4, 1])
     with col_search:
@@ -1342,32 +1375,122 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                 f"{p_name} ({p_post})" if p_name or p_post else "Nincs megadva"
             )
 
+            # --- IDŐSZAKI AGGREGÁCIÓ A DASHBOARD KÁRTYÁKHOZ ---
+            if s_data_raw:
+              df_card = pd.DataFrame(
+                  [
+                      [item[0], item[1], item[2] if len(item) > 2 else ""]
+                      for item in s_data_raw
+                  ],
+                  columns=["Dátum", "Érték", "Megjegyzés"],
+              )
+              df_card["Sort_Key"] = pd.to_datetime(
+                  df_card["Dátum"], format="mixed", errors="coerce"
+              )
+              df_card = df_card.dropna(subset=["Sort_Key"])
+              df_card["Érték"] = pd.to_numeric(df_card["Érték"])
+              df_card = df_card.sort_values("Sort_Key")
+
+              if dash_period == "Heti (Cs 14:00)":
+                df_card["Period_Key"] = df_card["Sort_Key"].apply(
+                    get_thursday_period_end
+                )
+                res_card = (
+                    df_card.groupby("Period_Key")
+                    .agg({
+                        "Érték": "sum",
+                        "Megjegyzés": lambda x: " | ".join(
+                            [str(n) for n in x if n and str(n).strip()]
+                        ),
+                    })
+                    .reset_index()
+                    .sort_values("Period_Key")
+                )
+
+                card_items = []
+                for _, row in res_card.iterrows():
+                  d_str = row["Period_Key"].strftime("%Y-%m-%d")
+                  card_items.append(
+                      [d_str, float(row["Érték"]), row["Megjegyzés"]]
+                  )
+
+              elif dash_period == "Havi összesítés":
+                df_card["Period_Key"] = (
+                    df_card["Sort_Key"]
+                    .dt.to_period("M")
+                    .dt.to_timestamp(how="end")
+                    .dt.floor("D")
+                )
+                res_card = (
+                    df_card.groupby("Period_Key")
+                    .agg({
+                        "Érték": "sum",
+                        "Megjegyzés": lambda x: " | ".join(
+                            [str(n) for n in x if n and str(n).strip()]
+                        ),
+                    })
+                    .reset_index()
+                    .sort_values("Period_Key")
+                )
+
+                card_items = []
+                for _, row in res_card.iterrows():
+                  d_str = row["Period_Key"].strftime("%Y-%m-%d")
+                  card_items.append(
+                      [d_str, float(row["Érték"]), row["Megjegyzés"]]
+                  )
+
+              elif dash_period == "Éves összesítés":
+                df_card["Period_Key"] = (
+                    df_card["Sort_Key"]
+                    .dt.to_period("Y")
+                    .dt.to_timestamp(how="end")
+                    .dt.floor("D")
+                )
+                res_card = (
+                    df_card.groupby("Period_Key")
+                    .agg({
+                        "Érték": "sum",
+                        "Megjegyzés": lambda x: " | ".join(
+                            [str(n) for n in x if n and str(n).strip()]
+                        ),
+                    })
+                    .reset_index()
+                    .sort_values("Period_Key")
+                )
+
+                card_items = []
+                for _, row in res_card.iterrows():
+                  d_str = row["Period_Key"].strftime("%Y-%m-%d")
+                  card_items.append(
+                      [d_str, float(row["Érték"]), row["Megjegyzés"]]
+                  )
+
+              else:  # Nyers / Napi adatok
+                card_items = sorted(s_data_raw, key=lambda x: str(x[0]))
+            else:
+              card_items = []
+
             card_surv_val = 0.0
             card_goal_type = "Nincs"
             card_goal_target = 0.0
 
-            for m_key in [
-                "Heti (Csütörtöki zárás 14:00)",
-                "Napi adatok",
-                "Havi összesítés",
-            ]:
-              if m_key in s_settings:
-                m_dict = s_settings[m_key]
-                if m_dict.get("show_survival", True) and float(
-                    m_dict.get("survival_value", 0.0)
-                ) > 0:
-                  card_surv_val = float(m_dict.get("survival_value", 0.0))
-                if m_dict.get("goal_type", "Nincs") != "Nincs":
-                  card_goal_type = m_dict.get("goal_type", "Nincs")
-                  card_goal_target = float(m_dict.get("goal_val_target", 0.0))
-                if card_surv_val > 0 or card_goal_type != "Nincs":
-                  break
-
-            card_items = (
-                sorted(s_data_raw, key=lambda x: str(x[0]))
-                if s_data_raw
-                else []
+            # Cél és Életvonal leérése a megfelelő nézetből ha van beállítva
+            m_lookup_key = (
+                dash_period
+                if dash_period != "Nyers / Napi adatok"
+                else "Napi adatok"
             )
+            if m_lookup_key in s_settings:
+              m_dict = s_settings[m_lookup_key]
+              if m_dict.get("show_survival", True) and float(
+                  m_dict.get("survival_value", 0.0)
+              ) > 0:
+                card_surv_val = float(m_dict.get("survival_value", 0.0))
+              if m_dict.get("goal_type", "Nincs") != "Nincs":
+                card_goal_type = m_dict.get("goal_type", "Nincs")
+                card_goal_target = float(m_dict.get("goal_val_target", 0.0))
+
             card_y = (
                 [float(item[1]) for item in card_items] if card_items else []
             )
@@ -1381,7 +1504,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
               card_calc_goal = card_y[-1] * (1 + card_goal_target / 100)
 
             condition_text, condition_color = calculate_stat_condition(
-                s_data_raw, card_surv_val
+                card_items, card_surv_val
             )
 
             with cols[j]:
@@ -1452,12 +1575,22 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                     )
 
                   formatted_t = [fmt_num(y, s_unit) for y in card_y]
-                  x_fmt = [
-                      pd.to_datetime(
-                          str(item[0]), format="mixed", errors="coerce"
-                      ).strftime("%b %d")
-                      for item in card_items
-                  ]
+
+                  x_fmt = []
+                  for item in card_items:
+                    dt_obj = pd.to_datetime(
+                        str(item[0]), format="mixed", errors="coerce"
+                    )
+                    if pd.notnull(dt_obj):
+                      if dash_period == "Éves összesítés":
+                        x_fmt.append(dt_obj.strftime("%Y"))
+                      elif dash_period == "Havi összesítés":
+                        x_fmt.append(dt_obj.strftime("%Y.%m."))
+                      else:
+                        x_fmt.append(dt_obj.strftime("%b %d"))
+                    else:
+                      x_fmt.append(str(item[0]))
+
                   hover_c = [
                       (
                           f"Dátum: {dt}<br>Érték: {txt}<br>Megjegyzés: {n}"
@@ -1547,16 +1680,12 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
 # 4. ÚJ STATISZTIKA LÉTREHOZÁSA (CSAK ADMIN)
 elif selected_menu == "➕ Új Statisztika Létrehozása":
   st.title("➕ Új Statisztika Kategória Létrehozása")
-  groups_list = db.get(
-      "groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"]
-  )
-
   with st.form("create_stat_form"):
     new_stat_name = st.text_input(
         "Statisztika neve:", placeholder="pl. Új Eladások"
     )
     new_stat_unit = st.text_input("Mértékegység:", placeholder="pl. Ft, db, fő")
-    new_stat_group = st.selectbox("Csoport / Részleg:", options=groups_list)
+    new_stat_group = st.selectbox("Csoport / Részleg:", options=all_groups)
     is_new_inverted = st.checkbox(
         "Fordított statisztika (a 0 felül van és lefelé nő)"
     )
@@ -1598,8 +1727,11 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
           ["user", "admin"],
           format_func=lambda x: "👑 Admin" if x == "admin" else "👤 Sima felhasználó",
       )
-      assigned_for_new = st.multiselect(
-          "Hozzárendelt Statisztikák:", options=all_stat_names
+      assigned_stats_for_new = st.multiselect(
+          "Hozzárendelt Egyedi Statisztikák:", options=all_stat_names
+      )
+      assigned_groups_for_new = st.multiselect(
+          "Hozzárendelt Egész Csoportok / Részlegek:", options=all_groups
       )
 
       add_user_btn = st.form_submit_button("Felhasználó Létrehozása")
@@ -1611,13 +1743,14 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
             users_db[new_username] = {
                 "password": new_password,
                 "role": new_role,
-                "assigned_stats": assigned_for_new,
+                "assigned_stats": assigned_stats_for_new,
+                "assigned_groups": assigned_groups_for_new,
             }
             save_users(users_db)
             st.success(f"'{new_username}' felhasználó sikeresen létrehozva!")
             st.rerun()
         else:
-          st.warning("Minden mezőt tölts ki!")
+          st.warning("A felhasználónév és jelszó megadása kötelező!")
 
   with col_u_edit:
     st.markdown("#### ✏️ Meglévő Felhasználó Módosítása")
@@ -1639,13 +1772,20 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                 "👑 Admin" if x == "admin" else "👤 Sima felhasználó"
             ),
         )
-        updated_assigned = st.multiselect(
-            "Hozzárendelt Statisztikák Módosítása:",
+        updated_assigned_stats = st.multiselect(
+            "Hozzárendelt Egyedi Statisztikák Módosítása:",
             options=all_stat_names,
             default=[
                 s
                 for s in u_data.get("assigned_stats", [])
                 if s in all_stat_names
+            ],
+        )
+        updated_assigned_groups = st.multiselect(
+            "Hozzárendelt Egész Csoportok / Részlegek Módosítása:",
+            options=all_groups,
+            default=[
+                g for g in u_data.get("assigned_groups", []) if g in all_groups
             ],
         )
 
@@ -1654,12 +1794,14 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
           if updated_pass:
             users_db[selected_edit_user]["password"] = updated_pass
           users_db[selected_edit_user]["role"] = updated_role
-          users_db[selected_edit_user]["assigned_stats"] = updated_assigned
-          save_users(users_db)
-          st.success(
-              f"'{selected_edit_user}' adatai frissítve! (Újra belépés után lép"
-              " életbe a felhasználónál)"
+          users_db[selected_edit_user]["assigned_stats"] = (
+              updated_assigned_stats
           )
+          users_db[selected_edit_user]["assigned_groups"] = (
+              updated_assigned_groups
+          )
+          save_users(users_db)
+          st.success(f"'{selected_edit_user}' adatai frissítve!")
           st.rerun()
 
   st.markdown("---")
@@ -1678,7 +1820,6 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
   if st.button("🗑️ Törlési Folyamat Indítása") and stat_to_delete_cat:
     st.session_state.confirm_delete_stat = stat_to_delete_cat
 
-  # MEGERŐSÍTŐ ABLAK / PANEL
   if (
       st.session_state.confirm_delete_stat
       and st.session_state.confirm_delete_stat == stat_to_delete_cat
@@ -1700,7 +1841,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
             del st.session_state.db["settings"][target]
           save_data(st.session_state.db)
 
-          # Töröljük a felhasználói hozzárendelésekből is
+          # Törlés a felhasználói hozzárendelésekből is
           for u_k in users_db:
             if target in users_db[u_k].get("assigned_stats", []):
               users_db[u_k]["assigned_stats"].remove(target)
@@ -1750,6 +1891,13 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
           ):
             st.session_state.db["stats"][s_key]["group"] = "Egyéb"
         save_data(st.session_state.db)
+
+        # Töröljük a felhasználói csoport-hozzárendelésekből is
+        for u_k in users_db:
+          if group_to_delete in users_db[u_k].get("assigned_groups", []):
+            users_db[u_k]["assigned_groups"].remove(group_to_delete)
+        save_users(users_db)
+
         st.success(f"'{group_to_delete}' részleg törölve!")
         st.rerun()
 
@@ -1785,3 +1933,4 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
         st.rerun()
     else:
       st.info("Az archívum üres.")
+        
