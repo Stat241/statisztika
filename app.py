@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="Statisztika Kezelő Rendszer", layout="wide", page_icon="📊"
 )
 
-# ================= NYOMTATÁSI CSS =================
+# ================= NYOMTATÁSI CSS (KIZÁRÓLAG A GRAFIKON NYOMTATÁSA) =================
 st.markdown(
     """
     <style>
@@ -21,6 +21,7 @@ st.markdown(
             margin: 5mm !important;
         }
         
+        /* Nyomtatáskor MINDEN rejtve van, ami nem maga a grafikon */
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -29,11 +30,22 @@ st.markdown(
         .stForm, 
         button, 
         iframe,
+        hr,
+        h1, h2, h3, h4, h5, h6,
+        [data-testid="stDataFrame"],
+        [data-testid="stDataEditor"],
+        .stElementContainer:not(:has(.stPlotlyChart)),
         .no-print {
             display: none !important;
         }
         
-        html, body, [data-testid="stAppViewContainer"], .main, .block-container, [data-testid="stVerticalBlock"], .stTabs, [data-testid="stTabContent"] {
+        /* A főkonténer elemeiből is elrejtjük a grafikont nem tartalmazó blokkokat */
+        [data-testid="stMainBlockContainer"] > div:not(:has(.stPlotlyChart)) {
+            display: none !important;
+        }
+        
+        /* Tiszta keret és A4 lapra illesztés */
+        html, body, [data-testid="stAppViewContainer"], .main, .block-container, [data-testid="stVerticalBlock"] {
             width: 100% !important;
             max-width: 100% !important;
             height: auto !important;
@@ -41,8 +53,6 @@ st.markdown(
             padding: 0 !important;
             background: white !important;
             overflow: visible !important;
-            page-break-after: avoid !important;
-            page-break-inside: avoid !important;
         }
         
         .stPlotlyChart, .js-plotly-plot, .plot-container {
@@ -227,6 +237,7 @@ st.sidebar.markdown("---")
 
 # ================= MODULOK =================
 
+# 1. EGYEDI STATISZTIKA NÉZET
 if selected_menu == "📊 Egyedi Statisztika Nézet":
   if not stat_names:
     st.warning("⚠️ Nincs elérhető statisztikád. Hozz létre egyet a menüben!")
