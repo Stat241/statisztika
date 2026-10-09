@@ -9,16 +9,16 @@ import streamlit.components.v1 as components
 # ================= OLDAL ALAPBEÁLLÍTÁSAI =================
 st.set_page_config(page_title="Statisztika Kezelő Rendszer", layout="wide", page_icon="📊")
 
-# ================= NYOMTATÁSI CSS (OPTIMÁLIS 1 OLDALAS A4 FEKVŐ) =================
+# ================= NYOMTATÁSI CSS (HAJSZÁLPONTOS 297mm x 210mm A4 FEKVŐ) =================
 st.markdown("""
     <style>
     @media print {
         @page {
-            size: A4 landscape;
+            size: 297mm 210mm !important; /* Pontos A4 fekvő méret */
             margin: 0mm !important;
         }
         
-        /* Felesleges elemek elrejtése */
+        /* Felesleges Streamlit elemek elrejtése */
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -31,10 +31,10 @@ st.markdown("""
             display: none !important;
         }
         
-        /* Strict 1 oldalas kényszerítés */
+        /* Teljes képernyős kitöltés 1 oldalon */
         html, body, [data-testid="stAppViewContainer"], .main, .block-container, [data-testid="stVerticalBlock"], .stTabs, [data-testid="stTabContent"] {
-            width: 100% !important;
-            max-width: 100% !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
             height: 100vh !important;
             max-height: 100vh !important;
             margin: 0 !important;
@@ -45,12 +45,12 @@ st.markdown("""
             page-break-inside: avoid !important;
         }
         
-        /* Grafikon teljes kitöltése margók nélkül */
+        /* Grafikon kifeszítése a nyomtatási felületre */
         .stPlotlyChart, .js-plotly-plot, .plot-container {
-            width: 100% !important;
-            max-width: 100% !important;
-            height: 100vh !important;
-            margin: 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            height: 98vh !important;
+            margin: 0 auto !important;
             padding: 0 !important;
             page-break-inside: avoid !important;
         }
@@ -571,14 +571,14 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     # NÉV ÉS POSZT ANNOTÁCIÓK A BAL SZÉLEN
                     if person_name:
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.20,
+                            xref="paper", yref="paper", x=0.0, y=1.18,
                             text=f"<b>{person_name}</b>", showarrow=False,
                             align="left", xanchor="left", yanchor="bottom",
                             font=dict(size=26, family="Arial Black", color="#000000")
                         )
                     if person_post:
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.10,
+                            xref="paper", yref="paper", x=0.0, y=1.08,
                             text=person_post, showarrow=False,
                             align="left", xanchor="left", yanchor="bottom",
                             font=dict(size=20, family="Arial Black", color="#000000")
@@ -588,7 +588,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if goal_type != "Nincs" and calc_goal_val > 0:
                         goal_fmt = fmt_num(calc_goal_val, current_unit)
                         fig.add_annotation(
-                            xref="paper", yref="paper", x=1.0, y=1.12,
+                            xref="paper", yref="paper", x=1.0, y=1.10,
                             text=f"🎯 Cél: {goal_fmt}",
                             showarrow=False,
                             align="right", xanchor="right", yanchor="bottom",
@@ -604,9 +604,10 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
                     else: yaxis_dict["rangemode"] = "tozero"
 
-                    xaxis_range = [-0.3, max(unique_x) + 0.3] if len(unique_x) > 1 else [-0.5, 0.5]
+                    # BŐVÍTETT X-TARTOMÁNY (A JOBB OLDAL TÖKÉLETES ILLESZTÉSÉHEZ)
+                    xaxis_range = [-0.5, max(unique_x) + 0.7] if len(unique_x) > 1 else [-0.8, 0.8]
 
-                    # OPTIMALIZÁLT MARGÓK ÉS TÉRKÖZÖK (NEM VÁGODIK LE A JOBB OLDAL SEM)
+                    # A4 FEKVŐ OPTIMALIZÁLT MARGÓK ÉS STRUKTÚRA
                     layout_args = dict(
                         title=dict(
                             text=f"<b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
@@ -615,8 +616,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         ),
                         plot_bgcolor="white", paper_bgcolor="white",
                         autosize=True,
-                        height=620,
-                        margin=dict(t=130, b=100, l=50, r=30),
+                        height=580,
+                        margin=dict(t=120, b=90, l=55, r=65),
                         xaxis=dict(
                             title=dict(text="", font=dict(color="#000000", size=1)), 
                             tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
