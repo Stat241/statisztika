@@ -343,378 +343,379 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             st.sidebar.success(f"Beállítások elmentve ({indiv_agg})!")
             st.rerun()
 
-        tab_chart, tab_table = st.tabs(["📊 Grafikon Nézet", "📋 Adatkezelés & Táblázat"])
+        # --- GRAFIKON NÉZET ---
+        components.html("""
+            <button onclick="window.parent.print()" style="
+                padding: 10px 20px; 
+                font-size: 15px; 
+                background-color: #000000; 
+                color: white; 
+                border: none; 
+                border-radius: 8px; 
+                cursor: pointer;
+                font-weight: bold;
+                box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
+            ">🖨️ Nyomtatás A4-re</button>
+        """, height=50)
 
-        with tab_table:
-            st.subheader(f"➕ Új adat hozzáadása ({selected_stat})")
-            with st.form("add_data_form", clear_on_submit=True):
-                col_d, col_t = st.columns(2)
-                with col_d: input_date = st.date_input("Dátum")
-                with col_t: input_time = st.time_input("Időpont", value=datetime.now().time())
+        stat_data_raw = db["stats"][selected_stat]["data"]
+        
+        if stat_data_raw:
+            df_temp = pd.DataFrame([[item[0], item[1], item[2] if len(item)>2 else ""] for item in stat_data_raw], columns=["Dátum", "Érték", "Megjegyzés"])
+            df_temp["Sort_Key"] = pd.to_datetime(df_temp["Dátum"], format="mixed", errors="coerce")
+            df_temp = df_temp.dropna(subset=["Sort_Key"])
+            df_temp["Érték"] = pd.to_numeric(df_temp["Érték"])
+            df_temp = df_temp.sort_values("Sort_Key")
+            
+            if indiv_agg == "Heti (Csütörtöki zárás 14:00)":
+                df_temp["Period_End"] = df_temp["Sort_Key"].apply(get_thursday_period_end)
+                res_df = df_temp.groupby("Period_End").agg({
+                    "Érték": "sum",
+                    "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
+                }).reset_index().sort_values("Period_End")
+
+                raw_items = []
+                for idx, row in res_df.iterrows():
+                    d_str = row["Period_End"].strftime("%Y-%m-%d")
+                    raw_items.append({
+                        "x": len(raw_items),
+                        "date_str": d_str,
+                        "label": row["Period_End"].strftime("%Y. %m. %d."),
+                        "hover_label": row["Period_End"].strftime("%Y. %m. %d."),
+                        "val": float(row["Érték"]),
+                        "note": row["Megjegyzés"]
+                    })
+                unique_x = list(range(len(raw_items)))
+                unique_labels = [item["label"] for item in raw_items]
+
+            elif indiv_agg == "Havi összesítés":
+                df_temp["Period_Month"] = df_temp["Sort_Key"].dt.to_period("M").dt.to_timestamp(how="end").dt.floor("D")
+                res_df = df_temp.groupby("Period_Month").agg({
+                    "Érték": "sum",
+                    "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
+                }).reset_index().sort_values("Period_Month")
+
+                raw_items = []
+                for idx, row in res_df.iterrows():
+                    d_str = row["Period_Month"].strftime("%Y-%m-%d")
+                    raw_items.append({
+                        "x": len(raw_items),
+                        "date_str": d_str,
+                        "label": row["Period_Month"].strftime("%Y. %m. %d."),
+                        "hover_label": row["Period_Month"].strftime("%Y. %m. %d."),
+                        "val": float(row["Érték"]),
+                        "note": row["Megjegyzés"]
+                    })
+                unique_x = list(range(len(raw_items)))
+                unique_labels = [item["label"] for item in raw_items]
+
+            else:
+                df_temp["Date_Only"] = df_temp["Sort_Key"].dt.strftime("%Y-%m-%d")
                 
-                input_val = st.number_input(f"Érték ({current_unit})", min_value=0.0, step=1.0)
-                input_note = st.text_input("Megjegyzés / Esemény ehhez a ponthoz:")
-                if st.form_submit_button("Adat Hozzáadása"):
-                    full_dt_str = f"{input_date.strftime('%Y-%m-%d')} {input_time.strftime('%H:%M')}"
-                    db["stats"][selected_stat]["data"].append([full_dt_str, input_val, input_note])
-                    db["stats"][selected_stat]["data"] = sorted(
-                        db["stats"][selected_stat]["data"], 
-                        key=lambda x: pd.to_datetime(str(x[0]), format="mixed", errors="coerce")
-                    )
-                    save_data(db)
-                    st.rerun()
+                def get_bucket_type(row):
+                    dt = row["Sort_Key"]
+                    if dt.weekday() == 3:  # Csütörtök
+                        if dt.hour > 14 or (dt.hour == 14 and dt.minute > 0):
+                            return "post_14"
+                        else:
+                            return "pre_14"
+                    return "all"
 
-            st.markdown("---")
-            st.subheader("📋 Adat-táblázat (Időrendbe rendezve)")
-            
-            stat_data_raw = db["stats"][selected_stat]["data"]
-            
-            if stat_data_raw:
+                df_temp["Bucket_Type"] = df_temp.apply(get_bucket_type, axis=1)
+
+                res_df = df_temp.groupby(["Date_Only", "Bucket_Type"], sort=False).agg({
+                    "Sort_Key": "min",
+                    "Érték": "sum",
+                    "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
+                }).reset_index().sort_values("Sort_Key")
+
+                unique_dates = []
+                for d in res_df["Date_Only"]:
+                    if d not in unique_dates:
+                        unique_dates.append(d)
+
+                date_to_x = {d: idx for idx, d in enumerate(unique_dates)}
+
+                raw_items = []
+                for _, row in res_df.iterrows():
+                    d_only = row["Date_Only"]
+                    b_type = row["Bucket_Type"]
+                    d_obj = datetime.strptime(d_only, "%Y-%m-%d")
+                    fmt_d = f"{d_obj.year}. {d_obj.month:02d}. {d_obj.day:02d}."
+                    
+                    if b_type == "post_14":
+                        hover_lbl = fmt_d + " (14:00 után)"
+                    elif b_type == "pre_14":
+                        hover_lbl = fmt_d + " (14:00 előtt)"
+                    else:
+                        hover_lbl = fmt_d
+
+                    raw_items.append({
+                        "x": date_to_x[d_only],
+                        "date_str": d_only,
+                        "label": fmt_d,
+                        "hover_label": hover_lbl,
+                        "val": float(row["Érték"]),
+                        "note": row["Megjegyzés"]
+                    })
+
+                unique_x = list(range(len(unique_dates)))
+                unique_labels = [datetime.strptime(d, "%Y-%m-%d").strftime("%Y. %m. %d.") for d in unique_dates]
+
+        else:
+            raw_items = []
+            unique_x = []
+            unique_labels = []
+        
+        accumulated_vals = []
+        if raw_items:
+            running_tot = float(initial_accumulated_val)
+            for item in raw_items:
+                running_tot += item["val"]
+                accumulated_vals.append(running_tot)
+
+        y_vals_temp = [item["val"] for item in raw_items] if raw_items else []
+        
+        calc_survival_val = survival_value if survival_type == "Fix érték (db/Ft)" else 0.0
+
+        calc_goal_val = 0.0
+        if goal_type == "Fix érték (db/Ft)":
+            calc_goal_val = goal_value
+        elif goal_type == "Százalékos növekedés (%)" and len(y_vals_temp) > 0:
+            calc_goal_val = y_vals_temp[-1] * (1 + goal_value / 100)
+
+        if stat_data_raw:
+            date_range_str = ""
+            if len(raw_items) > 0:
                 try:
-                    stat_data_raw = sorted(
-                        stat_data_raw, 
-                        key=lambda x: pd.to_datetime(str(x[0]), format="mixed", errors="coerce")
+                    start_d = datetime.strptime(raw_items[0]["date_str"], "%Y-%m-%d").strftime("%Y. %m. %d.")
+                    end_d = datetime.strptime(raw_items[-1]["date_str"], "%Y-%m-%d").strftime("%Y. %m. %d.")
+                    date_range_str = f"({start_d} - {end_d})"
+                except Exception:
+                    date_range_str = ""
+
+            fig = go.Figure()
+
+            if len(raw_items) > 0:
+                x_numeric = [item["x"] for item in raw_items]
+                y_vals = [item["val"] for item in raw_items]
+                notes = [item["note"] for item in raw_items]
+
+                for i in range(len(raw_items) - 1):
+                    x1, y1 = x_numeric[i], y_vals[i]
+                    x2, y2 = x_numeric[i+1], y_vals[i+1]
+                    
+                    if is_stat_inverted_check:
+                        color = "#00C853" if y2 < y1 else "#FF1744"
+                    else:
+                        color = "#00C853" if y2 > y1 else "#FF1744"
+                    
+                    fig.add_trace(go.Scatter(
+                        x=[x1, x2], y=[y1, y2], mode='lines',
+                        line=dict(color=color, width=6), showlegend=False, hoverinfo='skip'
+                    ))
+
+                if show_survival_line and calc_survival_val > 0:
+                    fig.add_hline(
+                        y=calc_survival_val,
+                        line_dash="solid",
+                        line_color="#4B5563",
+                        line_width=4
                     )
+
+                formatted_texts = []
+                for idx, val in enumerate(y_vals):
+                    v_str = fmt_num(val, current_unit)
+                    if show_acc_in_brackets and accumulated_vals:
+                        acc_val = accumulated_vals[idx]
+                        acc_str = fmt_num(acc_val, current_unit)
+                        formatted_texts.append(f"{v_str}<br><span style='font-size:13px; color:#475569;'>({acc_str})</span>")
+                    else:
+                        formatted_texts.append(v_str)
+
+                hover_texts = []
+                for item, val, acc in zip(raw_items, y_vals, accumulated_vals):
+                    v_str = fmt_num(val, current_unit)
+                    acc_str = fmt_num(acc, current_unit)
+                    h_txt = f"Dátum: {item['hover_label']}<br>Érték: {v_str}<br>Akkumulált: {acc_str}"
+                    if item['note']: h_txt += f"<br>Megjegyzés: {item['note']}"
+                    hover_texts.append(h_txt)
+
+                fig.add_trace(go.Scatter(
+                    x=x_numeric, y=y_vals, mode='markers',
+                    marker=dict(size=16, color="#1E293B"),
+                    cliponaxis=False,
+                    hovertext=hover_texts, hoverinfo='text', showlegend=False
+                ))
+
+                for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
+                    fig.add_annotation(
+                        x=x_val, y=y_val, text=txt, showarrow=False, yshift=12, xshift=18, textangle=-75,
+                        font=dict(size=14, color="#000000", family="Arial Black"),
+                        xanchor="center", yanchor="bottom"
+                    )
+
+                if person_name:
+                    fig.add_annotation(
+                        xref="paper", yref="paper", x=0.0, y=1.15,
+                        text=f"<b>{person_name}</b>", showarrow=False,
+                        align="left", xanchor="left", yanchor="bottom",
+                        font=dict(size=26, family="Arial Black", color="#000000")
+                    )
+                if person_post:
+                    fig.add_annotation(
+                        xref="paper", yref="paper", x=0.0, y=1.05,
+                        text=person_post, showarrow=False,
+                        align="left", xanchor="left", yanchor="bottom",
+                        font=dict(size=20, family="Arial Black", color="#000000")
+                    )
+
+                if goal_type != "Nincs" and calc_goal_val > 0:
+                    goal_fmt = fmt_num(calc_goal_val, current_unit)
+                    fig.add_annotation(
+                        xref="paper", yref="paper", x=1.0, y=1.08,
+                        text=f"🎯 Cél: {goal_fmt}",
+                        showarrow=False,
+                        align="right", xanchor="right", yanchor="bottom",
+                        font=dict(size=20, color="#C5A059", family="Arial Black")
+                    )
+
+                yaxis_dict = dict(
+                    title=dict(text="", font=dict(color="#000000", size=1)), 
+                    showgrid=True, gridcolor="#F1F5F9", gridwidth=3,
+                    tickfont=dict(color="#000000", size=20, family="Arial Black"),
+                    showline=True, linecolor="#000000", linewidth=3.5,
+                    mirror=True
+                )
+                if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
+                else: yaxis_dict["rangemode"] = "tozero"
+
+                xaxis_range = [0, max(unique_x) + 0.6] if len(unique_x) > 1 else [0, 0.5]
+
+                layout_args = dict(
+                    title=dict(
+                        text=f"<b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
+                        x=0.5, xref="paper", xanchor='center', yanchor='top',
+                        font=dict(size=30, color="#000000")
+                    ),
+                    plot_bgcolor="white", paper_bgcolor="white",
+                    autosize=True,
+                    height=chart_height,
+                    margin=dict(t=margin_t, b=margin_b, l=margin_l, r=margin_r),
+                    xaxis=dict(
+                        title=dict(text="", font=dict(color="#000000", size=1)), 
+                        tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
+                        showgrid=True, gridcolor="#F1F5F9", gridwidth=3,
+                        tickfont=dict(color="#000000", size=15, family="Arial Black"),
+                        showline=True, linecolor="#000000", linewidth=3.5,
+                        mirror=True,
+                        range=xaxis_range
+                    ),
+                    yaxis=yaxis_dict
+                )
+
+                try:
+                    if ymin and ymax: layout_args["yaxis"]["range"] = [float(ymin), float(ymax)]
+                    if ystep: layout_args["yaxis"]["dtick"] = float(ystep)
                 except Exception:
                     pass
 
-                table_rows = []
-                for item in stat_data_raw:
-                    dt_str = str(item[0]).strip()
-                    parts = dt_str.split()
-                    d_part = parts[0] if len(parts) > 0 else ""
-                    t_part = parts[1] if len(parts) > 1 else "00:00"
-                    
-                    try:
-                        v_part = float(item[1])
-                        if v_part.is_integer():
-                            v_part = int(v_part)
-                    except (ValueError, TypeError):
-                        v_part = 0
-                        
-                    n_part = str(item[2]).strip() if len(item) > 2 and item[2] is not None and str(item[2]) != "nan" else ""
-                    table_rows.append([d_part, t_part, v_part, n_part])
+                fig.update_layout(**layout_args)
+                st.plotly_chart(fig, use_container_width=True)
 
-                df_raw = pd.DataFrame(table_rows, columns=["Dátum", "Időpont", f"Érték ({current_unit})", "Megjegyzés"])
-                
-                edited_df = st.data_editor(
-                    df_raw,
-                    num_rows="dynamic",
-                    use_container_width=True,
-                    column_config={
-                        "Dátum": st.column_config.TextColumn("Dátum (ÉÉÉÉ-HH-NN)", help="pl. 2026-10-06"),
-                        "Időpont": st.column_config.TextColumn("Időpont (ÓÓ:PP)", help="pl. 13:28"),
-                    },
-                    key=f"editor_{selected_stat}"
-                )
-                
-                updated_data = []
-                for _, row in edited_df.iterrows():
-                    d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
-                    t_val = str(row["Időpont"]).strip() if pd.notnull(row["Időpont"]) else "00:00"
-                    if not t_val or t_val == "nan": t_val = "00:00"
-                    
-                    if d_val and d_val != "nan":
-                        full_dt = f"{d_val} {t_val}".strip()
-                        try:
-                            v_val = float(row[f"Érték ({current_unit})"]) if pd.notnull(row[f"Érték ({current_unit})"]) else 0.0
-                            if v_val.is_integer(): v_val = int(v_val)
-                        except (ValueError, TypeError):
-                            v_val = 0
-                        n_val = str(row["Megjegyzés"]).strip() if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan" else ""
-                        updated_data.append([full_dt, v_val, n_val])
-                
-                updated_data = sorted(
-                    updated_data, 
+        st.markdown("---")
+
+        # --- ADATKEZELÉS & TÁBLÁZAT (KÖZVETLENÜL A GRAFIKON ALATT) ---
+        st.subheader(f"📋 Adatkezelés & Táblázat ({selected_stat})")
+        
+        with st.form("add_data_form", clear_on_submit=True):
+            col_d, col_t = st.columns(2)
+            with col_d: input_date = st.date_input("Dátum")
+            with col_t: input_time = st.time_input("Időpont", value=datetime.now().time())
+            
+            input_val = st.number_input(f"Érték ({current_unit})", min_value=0.0, step=1.0)
+            input_note = st.text_input("Megjegyzés / Esemény ehhez a ponthoz:")
+            if st.form_submit_button("Adat Hozzáadása"):
+                full_dt_str = f"{input_date.strftime('%Y-%m-%d')} {input_time.strftime('%H:%M')}"
+                db["stats"][selected_stat]["data"].append([full_dt_str, input_val, input_note])
+                db["stats"][selected_stat]["data"] = sorted(
+                    db["stats"][selected_stat]["data"], 
                     key=lambda x: pd.to_datetime(str(x[0]), format="mixed", errors="coerce")
                 )
+                save_data(db)
+                st.rerun()
 
-                if updated_data != stat_data_raw:
-                    db["stats"][selected_stat]["data"] = updated_data
-                    save_data(db)
-                    st.rerun()
-            else:
-                st.info("Még nincsenek rögzített adatok ebben a statisztikában.")
+        st.markdown("---")
+        st.subheader("📋 Adat-táblázat (Időrendbe rendezve)")
+        
+        stat_data_raw = db["stats"][selected_stat]["data"]
+        
+        if stat_data_raw:
+            try:
+                stat_data_raw = sorted(
+                    stat_data_raw, 
+                    key=lambda x: pd.to_datetime(str(x[0]), format="mixed", errors="coerce")
+                )
+            except Exception:
+                pass
 
-        with tab_chart:
-            components.html("""
-                <button onclick="window.parent.print()" style="
-                    padding: 10px 20px; 
-                    font-size: 15px; 
-                    background-color: #000000; 
-                    color: white; 
-                    border: none; 
-                    border-radius: 8px; 
-                    cursor: pointer;
-                    font-weight: bold;
-                    box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
-                ">🖨️ Nyomtatás A4-re</button>
-            """, height=50)
-
-            stat_data_raw = db["stats"][selected_stat]["data"]
-            
-            if stat_data_raw:
-                df_temp = pd.DataFrame([[item[0], item[1], item[2] if len(item)>2 else ""] for item in stat_data_raw], columns=["Dátum", "Érték", "Megjegyzés"])
-                df_temp["Sort_Key"] = pd.to_datetime(df_temp["Dátum"], format="mixed", errors="coerce")
-                df_temp = df_temp.dropna(subset=["Sort_Key"])
-                df_temp["Érték"] = pd.to_numeric(df_temp["Érték"])
-                df_temp = df_temp.sort_values("Sort_Key")
+            table_rows = []
+            for item in stat_data_raw:
+                dt_str = str(item[0]).strip()
+                parts = dt_str.split()
+                d_part = parts[0] if len(parts) > 0 else ""
+                t_part = parts[1] if len(parts) > 1 else "00:00"
                 
-                if indiv_agg == "Heti (Csütörtöki zárás 14:00)":
-                    df_temp["Period_End"] = df_temp["Sort_Key"].apply(get_thursday_period_end)
-                    res_df = df_temp.groupby("Period_End").agg({
-                        "Érték": "sum",
-                        "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
-                    }).reset_index().sort_values("Period_End")
-
-                    raw_items = []
-                    for idx, row in res_df.iterrows():
-                        d_str = row["Period_End"].strftime("%Y-%m-%d")
-                        raw_items.append({
-                            "x": len(raw_items),
-                            "date_str": d_str,
-                            "label": row["Period_End"].strftime("%Y. %m. %d."),
-                            "hover_label": row["Period_End"].strftime("%Y. %m. %d."),
-                            "val": float(row["Érték"]),
-                            "note": row["Megjegyzés"]
-                        })
-                    unique_x = list(range(len(raw_items)))
-                    unique_labels = [item["label"] for item in raw_items]
-
-                elif indiv_agg == "Havi összesítés":
-                    df_temp["Period_Month"] = df_temp["Sort_Key"].dt.to_period("M").dt.to_timestamp(how="end").dt.floor("D")
-                    res_df = df_temp.groupby("Period_Month").agg({
-                        "Érték": "sum",
-                        "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
-                    }).reset_index().sort_values("Period_Month")
-
-                    raw_items = []
-                    for idx, row in res_df.iterrows():
-                        d_str = row["Period_Month"].strftime("%Y-%m-%d")
-                        raw_items.append({
-                            "x": len(raw_items),
-                            "date_str": d_str,
-                            "label": row["Period_Month"].strftime("%Y. %m. %d."),
-                            "hover_label": row["Period_Month"].strftime("%Y. %m. %d."),
-                            "val": float(row["Érték"]),
-                            "note": row["Megjegyzés"]
-                        })
-                    unique_x = list(range(len(raw_items)))
-                    unique_labels = [item["label"] for item in raw_items]
-
-                else:
-                    df_temp["Date_Only"] = df_temp["Sort_Key"].dt.strftime("%Y-%m-%d")
+                try:
+                    v_part = float(item[1])
+                    if v_part.is_integer():
+                        v_part = int(v_part)
+                except (ValueError, TypeError):
+                    v_part = 0
                     
-                    def get_bucket_type(row):
-                        dt = row["Sort_Key"]
-                        if dt.weekday() == 3:  # Csütörtök
-                            if dt.hour > 14 or (dt.hour == 14 and dt.minute > 0):
-                                return "post_14"
-                            else:
-                                return "pre_14"
-                        return "all"
+                n_part = str(item[2]).strip() if len(item) > 2 and item[2] is not None and str(item[2]) != "nan" else ""
+                table_rows.append([d_part, t_part, v_part, n_part])
 
-                    df_temp["Bucket_Type"] = df_temp.apply(get_bucket_type, axis=1)
-
-                    res_df = df_temp.groupby(["Date_Only", "Bucket_Type"], sort=False).agg({
-                        "Sort_Key": "min",
-                        "Érték": "sum",
-                        "Megjegyzés": lambda x: " | ".join([str(n) for n in x if n and str(n).strip()])
-                    }).reset_index().sort_values("Sort_Key")
-
-                    unique_dates = []
-                    for d in res_df["Date_Only"]:
-                        if d not in unique_dates:
-                            unique_dates.append(d)
-
-                    date_to_x = {d: idx for idx, d in enumerate(unique_dates)}
-
-                    raw_items = []
-                    for _, row in res_df.iterrows():
-                        d_only = row["Date_Only"]
-                        b_type = row["Bucket_Type"]
-                        d_obj = datetime.strptime(d_only, "%Y-%m-%d")
-                        fmt_d = f"{d_obj.year}. {d_obj.month:02d}. {d_obj.day:02d}."
-                        
-                        if b_type == "post_14":
-                            hover_lbl = fmt_d + " (14:00 után)"
-                        elif b_type == "pre_14":
-                            hover_lbl = fmt_d + " (14:00 előtt)"
-                        else:
-                            hover_lbl = fmt_d
-
-                        raw_items.append({
-                            "x": date_to_x[d_only],
-                            "date_str": d_only,
-                            "label": fmt_d,
-                            "hover_label": hover_lbl,
-                            "val": float(row["Érték"]),
-                            "note": row["Megjegyzés"]
-                        })
-
-                    unique_x = list(range(len(unique_dates)))
-                    unique_labels = [datetime.strptime(d, "%Y-%m-%d").strftime("%Y. %m. %d.") for d in unique_dates]
-
-            else:
-                raw_items = []
-                unique_x = []
-                unique_labels = []
+            df_raw = pd.DataFrame(table_rows, columns=["Dátum", "Időpont", f"Érték ({current_unit})", "Megjegyzés"])
             
-            accumulated_vals = []
-            if raw_items:
-                running_tot = float(initial_accumulated_val)
-                for item in raw_items:
-                    running_tot += item["val"]
-                    accumulated_vals.append(running_tot)
-
-            y_vals_temp = [item["val"] for item in raw_items] if raw_items else []
+            edited_df = st.data_editor(
+                df_raw,
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "Dátum": st.column_config.TextColumn("Dátum (ÉÉÉÉ-HH-NN)", help="pl. 2026-10-06"),
+                    "Időpont": st.column_config.TextColumn("Időpont (ÓÓ:PP)", help="pl. 13:28"),
+                },
+                key=f"editor_{selected_stat}"
+            )
             
-            calc_survival_val = survival_value if survival_type == "Fix érték (db/Ft)" else 0.0
-
-            calc_goal_val = 0.0
-            if goal_type == "Fix érték (db/Ft)":
-                calc_goal_val = goal_value
-            elif goal_type == "Százalékos növekedés (%)" and len(y_vals_temp) > 0:
-                calc_goal_val = y_vals_temp[-1] * (1 + goal_value / 100)
-
-            if stat_data_raw:
-                date_range_str = ""
-                if len(raw_items) > 0:
+            updated_data = []
+            for _, row in edited_df.iterrows():
+                d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
+                t_val = str(row["Időpont"]).strip() if pd.notnull(row["Időpont"]) else "00:00"
+                if not t_val or t_val == "nan": t_val = "00:00"
+                
+                if d_val and d_val != "nan":
+                    full_dt = f"{d_val} {t_val}".strip()
                     try:
-                        start_d = datetime.strptime(raw_items[0]["date_str"], "%Y-%m-%d").strftime("%Y. %m. %d.")
-                        end_d = datetime.strptime(raw_items[-1]["date_str"], "%Y-%m-%d").strftime("%Y. %m. %d.")
-                        date_range_str = f"({start_d} - {end_d})"
-                    except Exception:
-                        date_range_str = ""
+                        v_val = float(row[f"Érték ({current_unit})"]) if pd.notnull(row[f"Érték ({current_unit})"]) else 0.0
+                        if v_val.is_integer(): v_val = int(v_val)
+                    except (ValueError, TypeError):
+                        v_val = 0
+                    n_val = str(row["Megjegyzés"]).strip() if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan" else ""
+                    updated_data.append([full_dt, v_val, n_val])
+            
+            updated_data = sorted(
+                updated_data, 
+                key=lambda x: pd.to_datetime(str(x[0]), format="mixed", errors="coerce")
+            )
 
-                fig = go.Figure()
-
-                if len(raw_items) > 0:
-                    x_numeric = [item["x"] for item in raw_items]
-                    y_vals = [item["val"] for item in raw_items]
-                    notes = [item["note"] for item in raw_items]
-
-                    for i in range(len(raw_items) - 1):
-                        x1, y1 = x_numeric[i], y_vals[i]
-                        x2, y2 = x_numeric[i+1], y_vals[i+1]
-                        
-                        if is_stat_inverted_check:
-                            color = "#00C853" if y2 < y1 else "#FF1744"
-                        else:
-                            color = "#00C853" if y2 > y1 else "#FF1744"
-                        
-                        fig.add_trace(go.Scatter(
-                            x=[x1, x2], y=[y1, y2], mode='lines',
-                            line=dict(color=color, width=6), showlegend=False, hoverinfo='skip'
-                        ))
-
-                    if show_survival_line and calc_survival_val > 0:
-                        fig.add_hline(
-                            y=calc_survival_val,
-                            line_dash="solid",
-                            line_color="#4B5563",
-                            line_width=4
-                        )
-
-                    formatted_texts = []
-                    for idx, val in enumerate(y_vals):
-                        v_str = fmt_num(val, current_unit)
-                        if show_acc_in_brackets and accumulated_vals:
-                            acc_val = accumulated_vals[idx]
-                            acc_str = fmt_num(acc_val, current_unit)
-                            formatted_texts.append(f"{v_str}<br><span style='font-size:13px; color:#475569;'>({acc_str})</span>")
-                        else:
-                            formatted_texts.append(v_str)
-
-                    hover_texts = []
-                    for item, val, acc in zip(raw_items, y_vals, accumulated_vals):
-                        v_str = fmt_num(val, current_unit)
-                        acc_str = fmt_num(acc, current_unit)
-                        h_txt = f"Dátum: {item['hover_label']}<br>Érték: {v_str}<br>Akkumulált: {acc_str}"
-                        if item['note']: h_txt += f"<br>Megjegyzés: {item['note']}"
-                        hover_texts.append(h_txt)
-
-                    fig.add_trace(go.Scatter(
-                        x=x_numeric, y=y_vals, mode='markers',
-                        marker=dict(size=16, color="#1E293B"),
-                        cliponaxis=False,
-                        hovertext=hover_texts, hoverinfo='text', showlegend=False
-                    ))
-
-                    for idx, (x_val, y_val, txt) in enumerate(zip(x_numeric, y_vals, formatted_texts)):
-                        fig.add_annotation(
-                            x=x_val, y=y_val, text=txt, showarrow=False, yshift=12, xshift=18, textangle=-75,
-                            font=dict(size=14, color="#000000", family="Arial Black"),
-                            xanchor="center", yanchor="bottom"
-                        )
-
-                    if person_name:
-                        fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.15,
-                            text=f"<b>{person_name}</b>", showarrow=False,
-                            align="left", xanchor="left", yanchor="bottom",
-                            font=dict(size=26, family="Arial Black", color="#000000")
-                        )
-                    if person_post:
-                        fig.add_annotation(
-                            xref="paper", yref="paper", x=0.0, y=1.05,
-                            text=person_post, showarrow=False,
-                            align="left", xanchor="left", yanchor="bottom",
-                            font=dict(size=20, family="Arial Black", color="#000000")
-                        )
-
-                    if goal_type != "Nincs" and calc_goal_val > 0:
-                        goal_fmt = fmt_num(calc_goal_val, current_unit)
-                        fig.add_annotation(
-                            xref="paper", yref="paper", x=1.0, y=1.08,
-                            text=f"🎯 Cél: {goal_fmt}",
-                            showarrow=False,
-                            align="right", xanchor="right", yanchor="bottom",
-                            font=dict(size=20, color="#C5A059", family="Arial Black")
-                        )
-
-                    yaxis_dict = dict(
-                        title=dict(text="", font=dict(color="#000000", size=1)), 
-                        showgrid=True, gridcolor="#F1F5F9", gridwidth=3,
-                        tickfont=dict(color="#000000", size=20, family="Arial Black"),
-                        showline=True, linecolor="#000000", linewidth=3.5,
-                        mirror=True
-                    )
-                    if is_stat_inverted_check: yaxis_dict["autorange"] = "reversed"
-                    else: yaxis_dict["rangemode"] = "tozero"
-
-                    xaxis_range = [0, max(unique_x) + 0.6] if len(unique_x) > 1 else [0, 0.5]
-
-                    layout_args = dict(
-                        title=dict(
-                            text=f"<b>{selected_stat}</b><br><span style='font-size: 20px; color: #1E293B;'>Időszak: {date_range_str} ({indiv_agg})</span>",
-                            x=0.5, xref="paper", xanchor='center', yanchor='top',
-                            font=dict(size=30, color="#000000")
-                        ),
-                        plot_bgcolor="white", paper_bgcolor="white",
-                        autosize=True,
-                        height=chart_height,
-                        margin=dict(t=margin_t, b=margin_b, l=margin_l, r=margin_r),
-                        xaxis=dict(
-                            title=dict(text="", font=dict(color="#000000", size=1)), 
-                            tickmode="array", tickvals=unique_x, ticktext=unique_labels, tickangle=-30,
-                            showgrid=True, gridcolor="#F1F5F9", gridwidth=3,
-                            tickfont=dict(color="#000000", size=15, family="Arial Black"),
-                            showline=True, linecolor="#000000", linewidth=3.5,
-                            mirror=True,
-                            range=xaxis_range
-                        ),
-                        yaxis=yaxis_dict
-                    )
-
-                    try:
-                        if ymin and ymax: layout_args["yaxis"]["range"] = [float(ymin), float(ymax)]
-                        if ystep: layout_args["yaxis"]["dtick"] = float(ystep)
-                    except Exception:
-                        pass
-
-                    fig.update_layout(**layout_args)
-                    st.plotly_chart(fig, use_container_width=True)
+            if updated_data != stat_data_raw:
+                db["stats"][selected_stat]["data"] = updated_data
+                save_data(db)
+                st.rerun()
+        else:
+            st.info("Még nincsenek rögzített adatok ebben a statisztikában.")
 
 # 2. TÖBB STATISZTIKA ÖSSZEVETÉSE
 elif selected_menu == "📈 Több Statisztika Összevetése":
@@ -797,7 +798,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
 
 # 3. ÖSSZESÍTŐ DASHBOARD (KÁRTYA NÉZET + ÁLLAPOTOK)
 elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
-    st.title("📋 Teljesítménymérő Statisztikák Dashboard")
+    st.title("📋 Teljesítmembérő Statisztikák Dashboard")
     
     all_groups = db.get("groups", ["Pénzügy", "Értékesítés", "Marketing", "Adminisztráció"])
     selected_group_filter = st.selectbox("Szűrés csoport / részleg szerint:", ["Összes csoport"] + all_groups)
