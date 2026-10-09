@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="Statisztika Kezelő Rendszer", layout="wide", page_icon="📊"
 )
 
-# ================= NYOMTATÁSI CSS (KIZÁRÓLAG A GRAFIKON NYOMTATÁSA) =================
+# ================= NYOMTATÁSI CSS =================
 st.markdown(
     """
     <style>
@@ -20,8 +20,6 @@ st.markdown(
             size: A4 landscape;
             margin: 5mm !important;
         }
-        
-        /* Nyomtatáskor MINDEN rejtve van, ami nem maga a grafikon */
         [data-testid="stSidebar"], 
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -38,13 +36,9 @@ st.markdown(
         .no-print {
             display: none !important;
         }
-        
-        /* A főkonténer elemeiből is elrejtjük a grafikont nem tartalmazó blokkokat */
         [data-testid="stMainBlockContainer"] > div:not(:has(.stPlotlyChart)) {
             display: none !important;
         }
-        
-        /* Tiszta keret és A4 lapra illesztés */
         html, body, [data-testid="stAppViewContainer"], .main, .block-container, [data-testid="stVerticalBlock"] {
             width: 100% !important;
             max-width: 100% !important;
@@ -54,7 +48,6 @@ st.markdown(
             background: white !important;
             overflow: visible !important;
         }
-        
         .stPlotlyChart, .js-plotly-plot, .plot-container {
             width: 100% !important;
             max-width: 100% !important;
@@ -68,9 +61,26 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ================= ADATTÁROLÁS & FÜGGVÉNYEK =================
+# ================= ADATTÁROLÁS & FELHASZNÁLÓKEZELÉS =================
 DB_FILE = "statisztikak.json"
 ARCHIVE_FILE = "archivum.json"
+USERS_FILE = "users.json"
+
+
+def load_users():
+  if os.path.exists(USERS_FILE):
+    try:
+      with open(USERS_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+    except Exception:
+      pass
+  # Alapértelmezett admin fiók: admin / admin123
+  return {"admin": "admin123", "laura": "pass123"}
+
+
+def save_users(users_dict):
+  with open(USERS_FILE, "w", encoding="utf-8") as f:
+    json.dump(users_dict, f, ensure_ascii=False, indent=2)
 
 
 def fmt_num(val, unit=""):
@@ -208,7 +218,34 @@ def get_thursday_period_end(dt):
   return thu_14
 
 
-# ================= SESSION STATE =================
+# ================= BEJELENTKEZÉSI LOGIKA =================
+users_db = load_users()
+
+if "logged_in" not in st.session_state:
+  st.session_state.logged_in = False
+if "username" not in st.session_state:
+  st.session_state.username = ""
+
+if not st.session_state.logged_in:
+  st.title("🔐 Bejelentkezés a Rendszerbe")
+  with st.form("login_form"):
+    input_user = st.text_input("Felhasználónév:")
+    input_pass = st.text_input("Jelszó:", type="password")
+    login_btn = st.form_submit_button("Bejelentkezés")
+
+    if login_btn:
+      if input_user in users_db and users_db[input_user] == input_pass:
+        st.session_state.logged_in = True
+        st.session_state.username = input_user
+        st.success("Sikeres bejelentkezés!")
+        st.rerun()
+      else:
+        st.error("Hibás felhasználónév vagy jelszó!")
+
+  st.caption("Alapértelmezet bejelentkezés: `admin` / `admin123`")
+  st.stop()  # Leállítja a kód további futását, amíg nincs bejelentkezve
+
+# ================= SESSION STATE ADATOK =================
 if "db" not in st.session_state:
   st.session_state.db = load_data()
 db = st.session_state.db
@@ -222,7 +259,13 @@ stat_names = all_stat_names
 
 # ================= NAVIGÁCIÓ =================
 st.sidebar.title("📌 Navigáció")
-st.sidebar.info("Rendszer: **Admin Mód**")
+st.sidebar.write(f"👤 Bejelentkezve: **{st.session_state.username}**")
+if st.sidebar.button("🚪 Kijelentkezés"):
+  st.session_state.logged_in = False
+  st.session_state.username = ""
+  st.rerun()
+
+st.sidebar.markdown("---")
 
 menu_options = [
     "📊 Egyedi Statisztika Nézet",
@@ -396,7 +439,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         key=f"goal_val_{selected_stat}_{indiv_agg}",
     )
 
-    # --- AZONNALI AUTOMATIKUS MENTÉS BÁRMILYEN BEÁLLÍTÁS VÁLTOZÁSAKOR ---
+    # AZONNALI AUTOMATIKUS MENTÉS
     if "settings" not in st.session_state.db:
       st.session_state.db["settings"] = {}
     if selected_stat not in st.session_state.db["settings"]:
@@ -1452,9 +1495,35 @@ elif selected_menu == "➕ Új Statisztika Kategória Létrehozása":
       else:
         st.warning("Adj meg egy nevet!")
 
-# 5. ADMINISZTRÁCIÓ & ARCHÍVUM
+# 5. ADMINISZTRÁCIÓ & ARCHÍVUM (ÚJ FELHASZNÁLÓI HOZZÁADÁSSAL)
 elif selected_menu == "⚙️ Adminisztráció & Archívum":
   st.title("⚙️ Rendszer Adminisztráció")
+
+  # --- ÚJ FELHASZNÁLÓ LÉTREHOZÁSA ---
+  st.subheader("👤 Új Felhasználó Hozzáadása")
+  with st.form("add_user_form", clear_on_submit=True):
+    col_u1, col_u2 = st.columns(2)
+    with col_u1:
+      new_username = st.text_input("Új felhasználónév:")
+    with col_u2:
+      new_password = st.text_input("Új jelszó:", type="password")
+
+    add_user_btn = st.form_submit_button("➕ Felhasználó Létrehozása")
+
+    if add_user_btn:
+      if new_username and new_password:
+        if new_username in users_db:
+          st.error("Ez a felhasználónév már létezik!")
+        else:
+          users_db[new_username] = new_password
+          save_users(users_db)
+          st.success(
+              f"'{new_username}' felhasználó sikeresen létrehozva és elmentve!"
+          )
+      else:
+        st.warning("Töltsd ki mindkét mezőt!")
+
+  st.markdown("---")
 
   st.subheader("📁 Csoportok / Részlegek Kezelése")
   col_g1, col_g2 = st.columns(2)
@@ -1540,4 +1609,3 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
         st.rerun()
     else:
       st.info("Az archívum üres.")
-        
