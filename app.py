@@ -126,7 +126,7 @@ def fmt_num(val, unit=""):
 
   if unit:
     clean_unit = str(unit).strip(".")
-    return f"{s}.{clean_unit}."
+    return f"{s} {clean_unit}"
   return s
 
 
@@ -249,6 +249,14 @@ def get_thursday_period_end(dt):
   return thu_14
 
 
+# Segédfüggvény a statisztika nevének és egységének megjelenítéséhez
+def stat_label(stat_name):
+  u = db["stats"].get(stat_name, {}).get("unit", "")
+  if u:
+    return f"{stat_name} ({u})"
+  return stat_name
+
+
 # ================= BEJELENTKEZÉSI LOGIKA =================
 users_db = load_users()
 
@@ -363,7 +371,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         " az admintól!"
     )
   else:
-    selected_stat = st.sidebar.selectbox("Választott statisztika:", stat_names)
+    selected_stat = st.sidebar.selectbox(
+        "Választott statisztika:", stat_names, format_func=stat_label
+    )
 
     current_unit = db["stats"][selected_stat].get("unit", "")
     stat_group = db["stats"][selected_stat].get("group", "Egyéb")
@@ -1160,6 +1170,7 @@ elif selected_menu == "📈 Több Statisztika Összevetése":
         "Válassz statisztikákat az összevetéshez:",
         stat_names,
         default=stat_names[:2] if len(stat_names) >= 2 else stat_names,
+        format_func=stat_label,
     )
 
     if selected_multi_stats:
@@ -1750,6 +1761,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
   selected_edit_stat = st.selectbox(
       "Válassz statisztikát a módosításhoz:",
       options=all_stat_names,
+      format_func=stat_label,
       key="admin_edit_stat_select",
   )
 
@@ -1811,7 +1823,9 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
           format_func=lambda x: "👑 Admin" if x == "admin" else "👤 Sima felhasználó",
       )
       assigned_stats_for_new = st.multiselect(
-          "Hozzárendelt Egyedi Statisztikák:", options=all_stat_names
+          "Hozzárendelt Egyedi Statisztikák:",
+          options=all_stat_names,
+          format_func=stat_label,
       )
       assigned_groups_for_new = st.multiselect(
           "Hozzárendelt Egész Csoportok / Részlegek:", options=all_groups
@@ -1863,6 +1877,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                 for s in u_data.get("assigned_stats", [])
                 if s in all_stat_names
             ],
+            format_func=stat_label,
         )
         updated_assigned_groups = st.multiselect(
             "Hozzárendelt Egész Csoportok / Részlegek Módosítása:",
@@ -1894,6 +1909,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
   stat_to_delete_cat = st.selectbox(
       "Törlendő statisztika kategória:",
       options=[""] + all_stat_names,
+      format_func=lambda x: stat_label(x) if x else "",
       key="stat_del_select",
   )
 
@@ -1993,7 +2009,9 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
   with col_a1:
     st.markdown("#### Statisztika archiválása")
     stat_to_archive = st.selectbox(
-        "Archiválandó statisztika:", options=all_stat_names
+        "Archiválandó statisztika:",
+        options=all_stat_names,
+        format_func=stat_label,
     )
     if st.button("📦 Archiválás"):
       archive_db[stat_to_archive] = db["stats"][stat_to_archive]
@@ -2004,7 +2022,9 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
     st.markdown("#### Visszaállítás az archívumból")
     if archive_db:
       stat_to_restore = st.selectbox(
-          "Visszaállítandó elem:", options=list(archive_db.keys())
+          "Visszaállítandó elem:",
+          options=list(archive_db.keys()),
+          format_func=stat_label,
       )
       if st.button("🔄 Visszaállítás"):
         st.session_state.db["stats"][stat_to_restore] = archive_db[
