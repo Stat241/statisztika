@@ -24,7 +24,7 @@ import pandas as pd
 from filelock import FileLock, Timeout
 
 SCART_NAME = "SCART"
-SCART_VERSION = "1.0.1"
+SCART_VERSION = "1.0.2"
 APP_TIMEZONE = ZoneInfo("Europe/Budapest")
 
 DAILY_LABEL = "Napi adatok"
@@ -426,8 +426,6 @@ def validate_table_row(date_text: str, time_text: str, value: Any):
         errors.append("hibás dátum/idő")
     if pd.isna(numeric):
         errors.append("hibás számérték")
-    if not pd.isna(numeric) and float(numeric) < 0:
-        errors.append("negatív érték")
     return parsed, numeric, errors
 
 
@@ -518,11 +516,8 @@ def _finish_minicrm_rows(date_value_pairs: list[tuple[Any, Any]], default_time):
         if numeric_value is None:
             skipped_bad_value += 1
             continue
-        if numeric_value < 0:
-            # A SCART jelenlegi adatsémája nem enged negatív statisztikaértéket.
-            skipped_negative += 1
-            continue
-
+        # Negatív Fizetve tétel is lehet valós MiniCRM korrekció (például
+        # E-helyesbítő számla), ezért azt nem dobjuk el.
         day_key = pd.Timestamp(parsed_date).normalize()
         daily_totals[day_key] = daily_totals.get(day_key, 0.0) + float(numeric_value)
 
@@ -548,57 +543,114 @@ def _finish_minicrm_rows(date_value_pairs: list[tuple[Any, Any]], default_time):
     return parsed_rows, stats
 
 
-def parse_minicrm_dataframe(df: pd.DataFrame, default_time):
-    """Extract MiniCRM cash-receipt data while saving only date + amount.
+def _minicrm_effective_date(payment_value: Any, issue_value: Any):
+    """Use payment date when present, otherwise fall back to invoice issue date."""
+    payment_date = _parse_date_cell(payment_value)
+    if pd.notna(payment_date):
+        return payment_date, False
+    issue_date = _parse_date_cell(issue_value)
+    if pd.notna(issue_date):
+        return issue_date, True
+    return pd.NaT, False
 
-    The saved SCART data contains only payment date and net amount. When the
-    MiniCRM export also contains document name/status, those columns are used
-    only as filters so paid pro-forma invoices are not counted a second time.
+
+def parse_minicrm_dataframe(df: pd.DataFrame, default_time):
+    """Extract MiniCRM revenue data from the current invoice snapshot.
+
+    Rules:
+      * E-díjbekérő rows are never counted.
+      * Only ``Fizetve`` invoices contribute to revenue.
+      * ``Kiállítva``, ``Sztornózva`` and ``Sztornó`` are excluded.
+      * If payment date is blank on an otherwise paid invoice, issue date is used.
+      * Covered dates include excluded invoice rows as well, so re-importing a full
+        MiniCRM export can remove an amount retroactively when an older invoice has
+        since changed from Fizetve to Sztornózva.
     """
     if df is None or df.empty:
         return [], ["Az Excel nem tartalmaz feldolgozható sorokat."], {}
 
-    header_map = {
-        _normalize_minicrm_header(col): col
-        for col in df.columns
-    }
+    header_map = {_normalize_minicrm_header(col): col for col in df.columns}
     payment_key = _normalize_minicrm_header("Számla: Kifizetés dátuma")
+    issue_key = _normalize_minicrm_header("Számla: Kiállítás dátuma")
     amount_key = _normalize_minicrm_header("Számla: Nettó összeg")
     name_key = _normalize_minicrm_header("Adatlap: Név")
     status_key = _normalize_minicrm_header("Adatlap: Státusz")
 
-    if payment_key not in header_map or amount_key not in header_map:
+    required = [amount_key, name_key, status_key]
+    missing = [k for k in required if k not in header_map]
+    if missing or (payment_key not in header_map and issue_key not in header_map):
         return [], [
-            "A MiniCRM Excelből hiányzik a 'Számla: Kifizetés dátuma' vagy "
-            "a 'Számla: Nettó összeg' oszlop."
+            "A MiniCRM Excelből hiányzik valamelyik szükséges oszlop: "
+            "'Adatlap: Név', 'Adatlap: Státusz', 'Számla: Nettó összeg', valamint "
+            "legalább az egyik dátumoszlop (Kifizetés dátuma / Kiállítás dátuma)."
         ], {}
 
-    work = df.copy()
-    skipped_proforma = 0
-    skipped_status = 0
-
-    if name_key in header_map:
-        name_col = header_map[name_key]
-        proforma_mask = work[name_col].astype(str).str.contains(
-            r"\(E-díjbekérő\)", case=False, na=False, regex=True
-        )
-        skipped_proforma = int(proforma_mask.sum())
-        work = work.loc[~proforma_mask]
-
-    if status_key in header_map:
-        status_col = header_map[status_key]
-        paid_mask = work[status_col].astype(str).str.strip().str.casefold() == "fizetve"
-        skipped_status = int((~paid_mask).sum())
-        work = work.loc[paid_mask]
-
-    date_col = header_map[payment_key]
+    name_col = header_map[name_key]
+    status_col = header_map[status_key]
     amount_col = header_map[amount_key]
-    pairs = list(work[[date_col, amount_col]].itertuples(index=False, name=None))
-    rows, stats = _finish_minicrm_rows(pairs, default_time)
-    stats["skipped_proforma"] = skipped_proforma
-    stats["skipped_status"] = skipped_status
-    return rows, [], stats
+    payment_col = header_map.get(payment_key)
+    issue_col = header_map.get(issue_key)
 
+    pairs = []
+    covered_dates = set()
+    skipped_proforma = 0
+    skipped_issued = 0
+    skipped_cancelled_original = 0
+    skipped_cancel_note = 0
+    skipped_other_status = 0
+    fallback_issue_date = 0
+    skipped_no_date = 0
+
+    for _, row in df.iterrows():
+        name = str(row.get(name_col, "") or "").strip()
+        status = str(row.get(status_col, "") or "").strip().casefold()
+        payment_value = row.get(payment_col) if payment_col is not None else None
+        issue_value = row.get(issue_col) if issue_col is not None else None
+        effective_date, used_issue_fallback = _minicrm_effective_date(payment_value, issue_value)
+
+        # Every usable invoice date is a date covered by this export. This is
+        # important for retroactive correction: a formerly paid invoice may now
+        # be Sztornózva, so the old aggregated SCART day must be recalculated.
+        if pd.notna(effective_date):
+            covered_dates.add(pd.Timestamp(effective_date).strftime("%Y-%m-%d"))
+
+        if "díjbekérő" in name.casefold():
+            skipped_proforma += 1
+            continue
+
+        if status == "kiállítva":
+            skipped_issued += 1
+            continue
+        if status == "sztornózva":
+            skipped_cancelled_original += 1
+            continue
+        if status == "sztornó":
+            skipped_cancel_note += 1
+            continue
+        if status != "fizetve":
+            skipped_other_status += 1
+            continue
+
+        if pd.isna(effective_date):
+            skipped_no_date += 1
+            continue
+        if used_issue_fallback:
+            fallback_issue_date += 1
+
+        pairs.append((effective_date, row.get(amount_col)))
+
+    rows, stats = _finish_minicrm_rows(pairs, default_time)
+    # _finish_minicrm_rows only sees the accepted paid rows. Keep the broader
+    # source-level counters separately.
+    stats["covered_dates"] = sorted(covered_dates)
+    stats["skipped_proforma"] = skipped_proforma
+    stats["skipped_issued"] = skipped_issued
+    stats["skipped_cancelled_original"] = skipped_cancelled_original
+    stats["skipped_cancel_note"] = skipped_cancel_note
+    stats["skipped_other_status"] = skipped_other_status
+    stats["fallback_issue_date"] = fallback_issue_date
+    stats["source_skipped_no_date"] = skipped_no_date
+    return rows, [], stats
 
 def parse_minicrm_excel_file(uploaded_file, default_time):
     """Read the first sheet of a MiniCRM .xlsx export and extract date + amount."""
@@ -614,12 +666,10 @@ def parse_minicrm_excel_file(uploaded_file, default_time):
 def parse_excel_paste(pasted_text: str, default_time) -> tuple[list, list, dict]:
     """Parse rows copied from Excel, including the full MiniCRM export.
 
-    MiniCRM mode is detected from the header. In that mode SCART uses only:
-      - Számla: Kifizetés dátuma
-      - Számla: Nettó összeg
-
-    All other MiniCRM columns are ignored, blank payment dates are skipped, and
-    rows with the same payment date are summed into one SCART point.
+    MiniCRM mode is detected from the header. In that mode SCART imports paid
+    invoices by date + net amount. Payment date is preferred; when it is blank,
+    issue date is used. Pro-forma, Kiállítva, Sztornózva and Sztornó rows are
+    excluded, and rows with the same effective date are summed.
 
     Simple layouts are still supported:
       Dátum | Érték
@@ -638,45 +688,90 @@ def parse_excel_paste(pasted_text: str, default_time) -> tuple[list, list, dict]
     payment_header = _normalize_minicrm_header("Számla: Kifizetés dátuma")
     amount_header = _normalize_minicrm_header("Számla: Nettó összeg")
 
-    # Full MiniCRM clipboard export: use only the two requested columns.
+    # Full MiniCRM clipboard export. Use the same rules as the .xlsx importer.
     if payment_header in normalized_headers and amount_header in normalized_headers:
-        date_idx = normalized_headers.index(payment_header)
-        amount_idx = normalized_headers.index(amount_header)
+        issue_header = _normalize_minicrm_header("Számla: Kiállítás dátuma")
         name_header = _normalize_minicrm_header("Adatlap: Név")
         status_header = _normalize_minicrm_header("Adatlap: Státusz")
-        name_idx = normalized_headers.index(name_header) if name_header in normalized_headers else None
-        status_idx = normalized_headers.index(status_header) if status_header in normalized_headers else None
+
+        if name_header not in normalized_headers or status_header not in normalized_headers:
+            return [], [
+                "A MiniCRM beillesztésből hiányzik az 'Adatlap: Név' vagy "
+                "az 'Adatlap: Státusz' oszlop."
+            ], {}
+
+        date_idx = normalized_headers.index(payment_header)
+        amount_idx = normalized_headers.index(amount_header)
+        issue_idx = normalized_headers.index(issue_header) if issue_header in normalized_headers else None
+        name_idx = normalized_headers.index(name_header)
+        status_idx = normalized_headers.index(status_header)
 
         pairs = []
         malformed = []
+        covered_dates = set()
         skipped_proforma = 0
-        skipped_status = 0
+        skipped_issued = 0
+        skipped_cancelled_original = 0
+        skipped_cancel_note = 0
+        skipped_other_status = 0
+        fallback_issue_date = 0
+        source_skipped_no_date = 0
+
         for line_no, raw_line in enumerate(raw_lines[1:], start=2):
             cells = [cell.strip() for cell in raw_line.split("\t")]
             if len(cells) == 1 and ";" in raw_line:
                 cells = [cell.strip() for cell in raw_line.split(";")]
-            needed_indices = [date_idx, amount_idx]
-            if name_idx is not None:
-                needed_indices.append(name_idx)
-            if status_idx is not None:
-                needed_indices.append(status_idx)
+
+            needed_indices = [date_idx, amount_idx, name_idx, status_idx]
+            if issue_idx is not None:
+                needed_indices.append(issue_idx)
             if max(needed_indices) >= len(cells):
                 malformed.append(f"{line_no}. sor: hiányos MiniCRM sor")
                 continue
 
-            if name_idx is not None and "(e-díjbekérő)" in cells[name_idx].casefold():
+            name = cells[name_idx]
+            status = cells[status_idx].strip().casefold()
+            payment_value = cells[date_idx]
+            issue_value = cells[issue_idx] if issue_idx is not None else None
+            effective_date, used_issue_fallback = _minicrm_effective_date(payment_value, issue_value)
+
+            if pd.notna(effective_date):
+                covered_dates.add(pd.Timestamp(effective_date).strftime("%Y-%m-%d"))
+
+            if "díjbekérő" in name.casefold():
                 skipped_proforma += 1
                 continue
-            if status_idx is not None and cells[status_idx].strip().casefold() != "fizetve":
-                skipped_status += 1
+            if status == "kiállítva":
+                skipped_issued += 1
+                continue
+            if status == "sztornózva":
+                skipped_cancelled_original += 1
+                continue
+            if status == "sztornó":
+                skipped_cancel_note += 1
+                continue
+            if status != "fizetve":
+                skipped_other_status += 1
                 continue
 
-            pairs.append((cells[date_idx], cells[amount_idx]))
+            if pd.isna(effective_date):
+                source_skipped_no_date += 1
+                continue
+            if used_issue_fallback:
+                fallback_issue_date += 1
+
+            pairs.append((effective_date, cells[amount_idx]))
 
         rows, stats = _finish_minicrm_rows(pairs, default_time)
         stats["mode"] = "minicrm"
+        stats["covered_dates"] = sorted(covered_dates)
         stats["skipped_proforma"] = skipped_proforma
-        stats["skipped_status"] = skipped_status
+        stats["skipped_issued"] = skipped_issued
+        stats["skipped_cancelled_original"] = skipped_cancelled_original
+        stats["skipped_cancel_note"] = skipped_cancel_note
+        stats["skipped_other_status"] = skipped_other_status
+        stats["fallback_issue_date"] = fallback_issue_date
+        stats["source_skipped_no_date"] = source_skipped_no_date
         return rows, malformed, stats
 
     # Backward-compatible simple Excel paste mode.
@@ -1880,13 +1975,15 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         # --- MINICRM / EXCEL IMPORT ---
         with st.expander("📥 MiniCRM / Excel import", expanded=False):
             st.caption(
-                "A teljes MiniCRM Excel táblát is használhatod. A SCART a statisztikába csak "
-                "a **Számla: Kifizetés dátuma** és a **Számla: Nettó összeg** értékeit menti."
+                "A teljes MiniCRM Excel táblát használhatod. A SCART a bevételhez a dátumot és "
+                "a **Számla: Nettó összeg** értékét használja. Elsődlegesen a kifizetés dátumát "
+                "veszi; ha az üres, a kiállítás dátumára teszi az összeget."
             )
             st.info(
-                "A díjbekérőket és a nem Fizetve státuszú sorokat automatikusan kihagyja, hogy "
-                "ugyanaz a befizetés ne számolódjon kétszer. Az azonos kifizetési dátumú tételeket "
-                "összeadja, így egy dátumhoz egy összeg kerül."
+                "Csak a **Fizetve** státuszú E-számlák számítanak bele. Az E-díjbekérő, "
+                "**Kiállítva**, **Sztornózva** és **Sztornó** sorokat kihagyja. Így egy később "
+                "sztornózott régi számla a következő teljes MiniCRM-importnál az eredeti időszakból "
+                "is kiesik, nem a sztornó hónapjára kerül negatív tételként."
             )
 
             excel_default_time = st.time_input(
@@ -1927,7 +2024,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     import_requested = st.button(
                         "📥 MiniCRM Excel importálása",
                         key=f"minicrm_import_btn_{selected_stat}",
-                        disabled=bool(import_errors) or not bool(imported_rows),
+                        disabled=bool(import_errors) or not bool(
+                            imported_rows or import_stats.get("covered_dates")
+                        ),
                     )
             else:
                 st.caption(
@@ -1958,12 +2057,17 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     )
                     if len(import_errors) > 30:
                         st.warning(f"További {len(import_errors) - 30} hibás sor is található.")
-                elif not imported_rows:
-                    st.warning("Nem találtam importálható dátum + összeg adatot.")
+                elif not imported_rows and not import_stats.get("covered_dates"):
+                    st.warning("Nem találtam importálható vagy újraszámolható MiniCRM dátumot.")
                 else:
                     # A MiniCRM exportok jellemzően újra tartalmazzák a korábbi időszakot is.
                     # Ezért az importált dátumokon a korábbi értéket lecseréljük, nem duplázzuk.
                     imported_dates = {row[0][:10] for row in imported_rows}
+                    covered_dates = set(import_stats.get("covered_dates", []))
+                    # MiniCRM snapshot importnál az export által lefedett dátumokat újraszámoljuk,
+                    # akkor is, ha egy adott régi számla közben Sztornózva lett és ezért már 0-val
+                    # járul hozzá. Egyszerű kétoszlopos importnál marad a korábbi viselkedés.
+                    replace_dates = covered_dates or imported_dates
                     old_rows = st.session_state.db["stats"][selected_stat]["data"]
                     kept_rows = []
                     replaced_rows = 0
@@ -1973,7 +2077,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                             row_day = row_day.strftime("%Y-%m-%d") if pd.notna(row_day) else None
                         except Exception:
                             row_day = None
-                        if row_day in imported_dates:
+                        if row_day in replace_dates:
                             replaced_rows += 1
                         else:
                             kept_rows.append(row)
@@ -1986,18 +2090,35 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
                     skipped = (
                         int(import_stats.get("skipped_no_date", 0))
+                        + int(import_stats.get("source_skipped_no_date", 0))
                         + int(import_stats.get("skipped_bad_value", 0))
                         + int(import_stats.get("skipped_negative", 0))
                     )
-                    filtered = (
-                        int(import_stats.get("skipped_proforma", 0))
-                        + int(import_stats.get("skipped_status", 0))
-                    )
-                    extra = f"; {replaced_rows} korábbi sor frissítve" if replaced_rows else ""
-                    if filtered:
-                        extra += f"; {filtered} díjbekérő/nem fizetett sor kiszűrve"
+                    extra_parts = []
+                    if replaced_rows:
+                        extra_parts.append(f"{replaced_rows} korábbi dátum újraszámolva")
+                    fallback_count = int(import_stats.get("fallback_issue_date", 0))
+                    if fallback_count:
+                        extra_parts.append(f"{fallback_count} tétel kiállítás dátumával számolva")
+                    proforma_count = int(import_stats.get("skipped_proforma", 0))
+                    if proforma_count:
+                        extra_parts.append(f"{proforma_count} díjbekérő kihagyva")
+                    issued_count = int(import_stats.get("skipped_issued", 0))
+                    if issued_count:
+                        extra_parts.append(f"{issued_count} Kiállítva státusz kihagyva")
+                    cancelled_count = int(import_stats.get("skipped_cancelled_original", 0))
+                    cancel_note_count = int(import_stats.get("skipped_cancel_note", 0))
+                    if cancelled_count or cancel_note_count:
+                        extra_parts.append(
+                            f"{cancelled_count} Sztornózva + {cancel_note_count} Sztornó sor kihagyva"
+                        )
+                    other_status = int(import_stats.get("skipped_other_status", 0))
+                    if other_status:
+                        extra_parts.append(f"{other_status} egyéb státusz kihagyva")
                     if skipped:
-                        extra += f"; {skipped} nem használható sor kihagyva"
+                        extra_parts.append(f"{skipped} nem használható sor kihagyva")
+
+                    extra = "; " + "; ".join(extra_parts) if extra_parts else ""
                     st.session_state["_scart_flash_success"] = (
                         f"✅ {len(imported_rows)} dátum importálva MiniCRM/Excel adatokból{extra}."
                     )
