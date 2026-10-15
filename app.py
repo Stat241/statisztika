@@ -27,7 +27,7 @@ import pandas as pd
 from filelock import FileLock, Timeout
 
 SCART_NAME = "SCART"
-SCART_VERSION = "1.0.6"
+SCART_VERSION = "1.0.7"
 APP_TIMEZONE = ZoneInfo("Europe/Budapest")
 
 DAILY_LABEL = "Napi adatok"
@@ -1638,47 +1638,60 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             "Grafikon nézet:", valid_aggs, key=f"indiv_agg_view_{selected_stat}"
         )
 
-        # --- ADATTÁBLA HÓNAP SZŰKÍTÉS ---
-        # Ez kizárólag az alsó szerkeszthető adattáblát szűri. A teljes adatbázis
-        # érintetlen marad, így egy hónap szerkesztése soha nem törli a többi hónapot.
-        stat_rows_for_month_default = db["stats"][selected_stat].get("data", [])
-        latest_valid_table_date = None
-        for _row in reversed(sorted(stat_rows_for_month_default, key=_stat_data_sort_key)):
+        # --- STATISZTIKA IDŐSZAK SZŰKÍTÉS ---
+        # A szűrés kizárólag a grafikonon megjelenő statisztikai időszakot szűkíti.
+        # Az alsó szerkeszthető adattábla továbbra is az összes rögzített sort mutatja.
+        stat_rows_for_period = db["stats"][selected_stat].get("data", [])
+        valid_period_dates = []
+        for _row in stat_rows_for_period:
             if not isinstance(_row, (list, tuple)) or not _row:
                 continue
             _ts = pd.to_datetime(str(_row[0]), format="mixed", errors="coerce")
             if pd.notna(_ts):
-                latest_valid_table_date = pd.Timestamp(_ts).date()
-                break
-        if latest_valid_table_date is None:
-            latest_valid_table_date = budapest_now().date()
+                valid_period_dates.append(pd.Timestamp(_ts).date())
+
+        if valid_period_dates:
+            earliest_stat_date = min(valid_period_dates)
+            latest_stat_date = max(valid_period_dates)
+        else:
+            earliest_stat_date = budapest_now().date()
+            latest_stat_date = budapest_now().date()
 
         st.sidebar.markdown("---")
-        st.sidebar.subheader("🗓️ Adattábla hónap szűkítés")
-        table_show_all_months = st.sidebar.checkbox(
-            "Összes hónap megjelenítése",
-            value=False,
-            key=f"table_show_all_months_{selected_stat}",
+        st.sidebar.subheader("🗓️ Statisztika időszak szűkítés")
+        chart_show_all_period = st.sidebar.checkbox(
+            "Teljes időszak megjelenítése",
+            value=True,
+            key=f"chart_show_all_period_{selected_stat}",
         )
-        table_month_date = st.sidebar.date_input(
-            "Melyik hónapot mutassa a táblázat?",
-            value=latest_valid_table_date,
-            key=f"table_month_date_{selected_stat}",
-            disabled=table_show_all_months,
+        chart_period_start_date = st.sidebar.date_input(
+            "Kezdő dátum",
+            value=earliest_stat_date,
+            key=f"chart_period_start_{selected_stat}",
+            disabled=chart_show_all_period,
         )
-        table_month_key = (
-            None
-            if table_show_all_months
-            else f"{table_month_date.year:04d}-{table_month_date.month:02d}"
+        chart_period_end_date = st.sidebar.date_input(
+            "Záró dátum",
+            value=latest_stat_date,
+            key=f"chart_period_end_{selected_stat}",
+            disabled=chart_show_all_period,
         )
-        if table_month_key:
+        chart_period_active = not chart_show_all_period
+        if chart_period_active:
+            if chart_period_start_date > chart_period_end_date:
+                st.sidebar.warning(
+                    "A kezdő dátum későbbi a záró dátumnál; a SCART a két dátumot "
+                    "automatikusan felcseréli."
+                )
+            _display_start = min(chart_period_start_date, chart_period_end_date)
+            _display_end = max(chart_period_start_date, chart_period_end_date)
             st.sidebar.caption(
-                f"Az alsó táblázat csak a(z) {table_month_date.year}. "
-                f"{table_month_date.month:02d}. havi sorokat mutatja."
+                f"A grafikon csak a(z) {_display_start.strftime('%Y.%m.%d.')} – "
+                f"{_display_end.strftime('%Y.%m.%d.')} közötti statisztikát mutatja."
             )
         else:
-            st.sidebar.caption("Az alsó táblázat minden rögzített sort mutat.")
-        st.sidebar.caption("✍️ A táblázat módosításai automatikusan mentődnek.")
+            st.sidebar.caption("A grafikon a teljes rögzített időszakot mutatja.")
+        st.sidebar.caption("📋 Az alsó adattábla ettől függetlenül minden sort megőriz és mutat.")
 
         mode_settings = stat_settings.get(indiv_agg, {})
         valid_goals = ["Nincs", "Fix érték (db/Ft)"]
@@ -1896,6 +1909,21 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 )
             df_temp = df_temp.dropna(subset=["Sort_Key", "Érték"]).sort_values("Sort_Key")
 
+            # A statisztikai dátumszűrés a grafikon alapadataira vonatkozik.
+            # Az adatbázis és az alsó szerkeszthető adattábla ettől nem változik.
+            if chart_period_active and not df_temp.empty:
+                _period_start = pd.Timestamp(
+                    min(chart_period_start_date, chart_period_end_date)
+                ).normalize()
+                _period_end = (
+                    pd.Timestamp(max(chart_period_start_date, chart_period_end_date)).normalize()
+                    + pd.Timedelta(days=1)
+                )
+                df_temp = df_temp[
+                    (df_temp["Sort_Key"] >= _period_start)
+                    & (df_temp["Sort_Key"] < _period_end)
+                ].copy()
+
             if indiv_agg == WEEKLY_LABEL:
                 df_temp["Period_End"] = df_temp["Sort_Key"].apply(
                     get_thursday_period_end
@@ -2017,6 +2045,14 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             calc_goal_val = goal_value
 
         if stat_data_raw:
+            if chart_period_active and not raw_items:
+                _empty_start = min(chart_period_start_date, chart_period_end_date)
+                _empty_end = max(chart_period_start_date, chart_period_end_date)
+                st.info(
+                    "ℹ️ A kiválasztott időszakban nincs megjeleníthető statisztikai adat: "
+                    f"{_empty_start.strftime('%Y.%m.%d.')} – {_empty_end.strftime('%Y.%m.%d.')}"
+                )
+
             date_range_str = ""
             if len(raw_items) > 0:
                 try:
@@ -2623,22 +2659,12 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         st.markdown("---")
 
-        # --- ADAT-TÁBLÁZAT, HÓNAP SZŰRÉS ÉS AUTOMATIKUS MENTÉS ---
-        if table_month_key:
-            st.subheader(
-                f"📋 Adat-táblázat – {table_month_date.year}. {table_month_date.month:02d}. hónap"
-            )
-            st.caption(
-                "Csak a kiválasztott hónap sorai láthatók. A többi hónap adatai a háttérben "
-                "változatlanul megmaradnak. A cellák módosítása és az új sorok kitöltése "
-                "automatikusan mentődik."
-            )
-        else:
-            st.subheader("📋 Adat-táblázat – összes adat")
-            st.caption(
-                "Minden rögzített sor látható. A cellák módosítása és az új sorok kitöltése "
-                "automatikusan mentődik."
-            )
+        # --- ADAT-TÁBLÁZAT ÉS AUTOMATIKUS MENTÉS ---
+        st.subheader("📋 Adat-táblázat – összes adat")
+        st.caption(
+            "A táblázat minden rögzített sort mutat, függetlenül a grafikon időszakszűrésétől. "
+            "A cellák módosítása és az új sorok kitöltése automatikusan mentődik."
+        )
 
         full_stat_data = db["stats"][selected_stat].get("data", [])
         visible_source_rows = []
@@ -2648,18 +2674,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             if not isinstance(item, (list, tuple)) or len(item) < 2:
                 hidden_malformed_rows += 1
                 continue
-
-            if table_month_key is None:
-                visible_source_rows.append(item)
-                continue
-
-            item_ts = pd.to_datetime(str(item[0]), format="mixed", errors="coerce")
-            if pd.isna(item_ts):
-                # Hibás régi sorhoz nem nyúlunk hónapszűrés közben; a háttérben megmarad.
-                hidden_malformed_rows += 1
-                continue
-            if pd.Timestamp(item_ts).strftime("%Y-%m") == table_month_key:
-                visible_source_rows.append(item)
+            visible_source_rows.append(item)
 
         table_rows = []
         for item in visible_source_rows:
@@ -2684,8 +2699,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         if hidden_malformed_rows:
             st.warning(
-                f"⚠️ {hidden_malformed_rows} régi/szerkezetileg hibás sor nincs ebben a "
-                "hónapnézetben, de a SCART megőrzi és nem törli."
+                f"⚠️ {hidden_malformed_rows} szerkezetileg hibás régi sor nem szerkeszthető a "
+                "táblázatban, de a SCART megőrzi és nem törli."
             )
 
         value_col = f"Érték ({current_unit})"
@@ -2695,7 +2710,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         )
 
         editor_revision = int(db.get("_meta", {}).get("revision", 0))
-        editor_month_token = table_month_key or "ALL"
         edited_df = st.data_editor(
             df_raw,
             num_rows="dynamic",
@@ -2711,7 +2725,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 value_col: st.column_config.NumberColumn(value_col, step=1.0),
                 "Megjegyzés": st.column_config.TextColumn("Megjegyzés"),
             },
-            key=f"editor_auto_{selected_stat}_{editor_month_token}_{editor_revision}",
+            key=f"editor_auto_{selected_stat}_ALL_{editor_revision}",
         )
 
         def _canonical_existing_rows(rows):
@@ -2811,24 +2825,11 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 "utána a SCART automatikusan elmenti."
             )
         elif table_changed:
-            # Hónapszűrésnél kizárólag a látható hónapot cseréljük.
-            # Minden más hónap és minden rejtett legacy sor érintetlen marad.
+            # Az összes szerkeszthető sort az új táblázatból építjük újra, miközben
+            # a szerkezetileg hibás legacy sorokat változatlanul megőrizzük.
             kept_rows = []
             for old_row in full_stat_data:
                 if not isinstance(old_row, (list, tuple)) or len(old_row) < 2:
-                    kept_rows.append(old_row)
-                    continue
-
-                if table_month_key is None:
-                    continue
-
-                old_ts = pd.to_datetime(
-                    str(old_row[0]), format="mixed", errors="coerce"
-                )
-                if pd.isna(old_ts):
-                    kept_rows.append(old_row)
-                    continue
-                if pd.Timestamp(old_ts).strftime("%Y-%m") != table_month_key:
                     kept_rows.append(old_row)
 
             kept_rows.extend(edited_rows)
@@ -2846,15 +2847,13 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     added_audit_rows, removed_audit_rows
                 ),
                 details={
-                    "month_filter": table_month_key or "Összes adat",
+                    "table_scope": "Összes adat",
                     "added_or_new_values": added_audit_rows,
                     "removed_or_previous_values": removed_audit_rows,
                 },
             )
             st.session_state["_scart_table_autosave_flash"] = (
-                "✅ Táblázat automatikusan elmentve. A többi hónap adatai nem változtak."
-                if table_month_key
-                else "✅ Táblázat automatikusan elmentve."
+                "✅ Táblázat automatikusan elmentve."
             )
             st.rerun()
 
