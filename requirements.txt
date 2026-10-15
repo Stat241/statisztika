@@ -1,4 +1,5 @@
-streamlit>=1.45,<2
-pandas>=2.2,<3
-plotly>=5.20,<7
-filelock>=3.13,<4
+streamlit
+pandas
+plotly
+filelock
+openpyxl
