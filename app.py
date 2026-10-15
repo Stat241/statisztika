@@ -7,14 +7,17 @@ Heti zárás: csütörtök 14:00 (Europe/Budapest).
 from __future__ import annotations
 
 import copy
+from collections import Counter
 import hashlib
 import hmac
+import io
 import json
 import os
 import re
 import secrets
 import shutil
 import tempfile
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,7 +27,7 @@ import pandas as pd
 from filelock import FileLock, Timeout
 
 SCART_NAME = "SCART"
-SCART_VERSION = "1.0.2"
+SCART_VERSION = "1.0.6"
 APP_TIMEZONE = ZoneInfo("Europe/Budapest")
 
 DAILY_LABEL = "Napi adatok"
@@ -415,6 +418,48 @@ def save_archive_file(
             return file_sha256(path)
     except Timeout as exc:
         raise DataFileError("Az archívum jelenleg zárolt.") from exc
+
+
+def load_audit_file(path: Path | str):
+    """Load the append-only SCART activity log."""
+    path = Path(path)
+    raw, recovery = load_json_with_recovery(path, default_if_missing=[])
+    if not isinstance(raw, list):
+        raise DataFileError("A tevékenységi napló formátuma hibás.")
+    if not path.exists():
+        atomic_json_dump(path, raw, create_backup=False)
+    return raw, recovery
+
+
+def append_audit_file(path: Path | str, event: dict, timeout: float = 8.0) -> None:
+    """Append one audit event under a file lock and save atomically."""
+    path = Path(path)
+    lock = FileLock(str(path) + ".lock", timeout=timeout)
+    try:
+        with lock:
+            raw, _ = load_json_with_recovery(path, default_if_missing=[])
+            if not isinstance(raw, list):
+                raise DataFileError("A tevékenységi napló formátuma hibás.")
+            raw.append(copy.deepcopy(event))
+            atomic_json_dump(path, raw, create_backup=True)
+    except Timeout as exc:
+        raise DataFileError("A tevékenységi napló jelenleg zárolt.") from exc
+
+
+def _audit_row_diff(before_rows, after_rows):
+    """Return multiset differences for SCART rows without requiring persistent row IDs."""
+    def encode(row):
+        return json.dumps(list(row), ensure_ascii=False, separators=(",", ":"), default=str)
+
+    before_counter = Counter(encode(row) for row in before_rows)
+    after_counter = Counter(encode(row) for row in after_rows)
+    added = []
+    removed = []
+    for encoded, count in (after_counter - before_counter).items():
+        added.extend([json.loads(encoded)] * count)
+    for encoded, count in (before_counter - after_counter).items():
+        removed.extend([json.loads(encoded)] * count)
+    return added, removed
 
 
 def validate_table_row(date_text: str, time_text: str, value: Any):
@@ -924,6 +969,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_FILE = BASE_DIR / "statisztikak.json"
 ARCHIVE_FILE = BASE_DIR / "archivum.json"
 USERS_FILE = BASE_DIR / "users.json"
+AUDIT_FILE = BASE_DIR / "tevekenysegi_naplo.json"
 RECOVERY_MESSAGES = []
 
 # ================= EGYFÁJLOS GITHUB/STREAMLIT BOOTSTRAP =================
@@ -950,21 +996,163 @@ INITIAL_DATABASE = {'groups': ['Pénzügy', 'Értékesítés', 'Marketing', 'Adm
                                          'description': 'Az adott időszakban a bankszámlára '
                                                         'beérkezett bruttó összegek '
                                                         'kötelezettségek és jóváírások alapján.',
-                                         'data': [['2026-07-23 14:00', 650000, 'Nyitó kampány'],
+                                         'data': [['2026-01-09 14:00',
+                                                   2670000,
+                                                   'HTM PÉKSÉG 2026-E/00003'],
+                                                  ['2026-01-10 14:00',
+                                                   700000,
+                                                   'ÉLETKERT 2026-E/00004'],
+                                                  ['2026-01-15 09:03',
+                                                   2138706,
+                                                   'ALBA NÖVSZER 2026-E/00005'],
+                                                  ['2026-01-15 16:00',
+                                                   2040000,
+                                                   'BEST ROYAL 2026-E/00007, 2026-E/00008'],
+                                                  ['2026-01-15 17:55',
+                                                   1250000,
+                                                   'HORVÁTH ÉS TÁRSA 2026-E/00009'],
+                                                  ['2026-01-15 18:19',
+                                                   450000,
+                                                   'FAIR-KÚT 2026-E/00006'],
+                                                  ['2026-01-16 18:06',
+                                                   85400,
+                                                   'PIZZAMŰVEK DK2026-E/00002'],
+                                                  ['2026-01-16 18:07',
+                                                   85400,
+                                                   'TRUE-AIM DK2026-E/00003'],
+                                                  ['2026-01-26 18:17',
+                                                   2000000,
+                                                   'SÁNDORFI 2026-E/00013'],
+                                                  ['2026-01-26 18:18',
+                                                   250000,
+                                                   'SÁNDORFI 2026-E/00014'],
+                                                  ['2026-01-28 18:08',
+                                                   85400,
+                                                   'M-DOPEN DK2026-E/00016'],
+                                                  ['2026-01-28 18:09',
+                                                   145000,
+                                                   'M-DOPEN DK2026-E/00006'],
+                                                  ['2026-01-30 18:11',
+                                                   135000,
+                                                   'SZÍNVONAL DK2026-E/00007'],
+                                                  ['2026-01-30 18:13',
+                                                   85400,
+                                                   'NORDOM SOLUTIONS 2026-E/00005'],
+                                                  ['2026-01-30 18:21',
+                                                   125000,
+                                                   'RONION DK-2026-E/00008'],
+                                                  ['2026-02-03 14:00',
+                                                   15000000,
+                                                   'SZÍNVONAL 2026-E/00022 (Előlegsz.)'],
+                                                  ['2026-02-03 18:45',
+                                                   960000,
+                                                   'BRINGABOARD 2026-E/00015'],
+                                                  ['2026-02-04 14:00',
+                                                   803703,
+                                                   'GAG MANAGEMENT 2026-E/00025'],
+                                                  ['2026-02-05 18:35',
+                                                   87850,
+                                                   'FAIRCRAFT DK2026-E/00011'],
+                                                  ['2026-02-11 18:36',
+                                                   85400,
+                                                   'TÚRA EGER DK2026-E/00010'],
+                                                  ['2026-02-11 18:36',
+                                                   87750,
+                                                   'B&B HARD DK2026-E/00013'],
+                                                  ['2026-02-13 18:37',
+                                                   85400,
+                                                   'BARADSLA DK2026-E/00009'],
+                                                  ['2026-02-16 15:21',
+                                                   255000,
+                                                   'M-DOPEN 2026-E/00029'],
+                                                  ['2026-02-16 18:38',
+                                                   87750,
+                                                   'FAIR-KÚT DK2026-E/00016'],
+                                                  ['2026-02-17 18:38',
+                                                   87500,
+                                                   'M-DOPEN DK2026-E/00015'],
+                                                  ['2026-02-18 18:39',
+                                                   87750,
+                                                   'W-R HUNGARY DK2026-E/00017'],
+                                                  ['2026-02-19 18:40',
+                                                   87750,
+                                                   'MY CARPETDK2026-E/00018'],
+                                                  ['2026-02-25 18:41',
+                                                   75200,
+                                                   'PLUMBER-BAU DK2026-E/00014'],
+                                                  ['2026-02-26 18:42',
+                                                   92400,
+                                                   'V.I.P. DK2026-E/00019'],
+                                                  ['2026-03-09 14:00',
+                                                   680000,
+                                                   'GYÖRÖKGÉP 2026-E/00040'],
+                                                  ['2026-03-10 14:00',
+                                                   1300000,
+                                                   'AKÁC-CENTRUM 2026-E/00039'],
+                                                  ['2026-03-16 18:52',
+                                                   175420,
+                                                   'FAIR-KÚT DK2026-E/00023'],
+                                                  ['2026-03-17 18:56',
+                                                   87750,
+                                                   'THREE STONES DK2026-E/00021'],
+                                                  ['2026-03-18 18:59',
+                                                   175000,
+                                                   'JÁRCSICS THERM DK2026-E/00026'],
+                                                  ['2026-03-20 19:00',
+                                                   900000,
+                                                   'NORDOM SOLUTIONS 2026-E/00045'],
+                                                  ['2026-03-23 19:01',
+                                                   97600,
+                                                   'MARKETING SZABÓSÁG DK2026-E/00029'],
+                                                  ['2026-03-26 19:01',
+                                                   175200,
+                                                   'ENERGREEN KFT. DK2026-E/00030'],
+                                                  ['2026-03-31 14:00',
+                                                   87750,
+                                                   'PAP GÁBOR (???) DK2026-E/00032'],
+                                                  ['2026-03-31 18:51',
+                                                   97600,
+                                                   'B&T BUILD DK2026-E/00033'],
+                                                  ['2026-03-31 19:03',
+                                                   97600,
+                                                   'PETTERN DK2026-E/00034'],
+                                                  ['2026-04-08 14:00', 3000000, ''],
+                                                  ['2026-04-21 14:00', 630000, ''],
+                                                  ['2026-04-27 14:00', 355000, ''],
+                                                  ['2026-05-04 14:00', 900000, ''],
+                                                  ['2026-05-07 14:00', 1740000, ''],
+                                                  ['2026-05-21 14:00', 4605000, ''],
+                                                  ['2026-06-03 14:00', 2500000, ''],
+                                                  ['2026-06-04 14:00', 1855000, ''],
+                                                  ['2026-06-11 14:00', 255000, ''],
+                                                  ['2026-06-18 14:00', 2260000, ''],
+                                                  ['2026-06-26 14:00', 2311000, ''],
+                                                  ['2026-06-29 14:00', 462998, ''],
+                                                  ['2026-07-14 14:00', 1200000, ''],
+                                                  ['2026-07-16 14:00', 857100, ''],
+                                                  ['2026-07-23 14:00', 650000, 'Nyitó kampány'],
                                                   ['2026-07-30 14:00', 97500, ''],
                                                   ['2026-08-06 14:00', 97500, ''],
+                                                  ['2026-08-11 14:00', 255000, ''],
                                                   ['2026-08-13 14:00',
                                                    547500,
                                                    'Új ügyfél szerződés'],
+                                                  ['2026-08-19 14:00', 255000, ''],
                                                   ['2026-08-20 14:00', 347500, ''],
-                                                  ['2026-08-27 14:00',
-                                                   1570799,
-                                                   'Havi zárás pörgés'],
+                                                  ['2026-08-24 14:00', 833299, ''],
+                                                  ['2026-08-27 14:00', 635000, ''],
+                                                  ['2026-09-02 14:00', 1800000, ''],
                                                   ['2026-09-03 14:00', 2350000, 'Prémium csomagok'],
                                                   ['2026-09-10 14:00', 390000, ''],
+                                                  ['2026-09-16 14:00', 4606000, ''],
                                                   ['2026-09-17 14:00', 4722200, 'Rekord bevétel'],
                                                   ['2026-09-24 14:00', 0, 'Ünnepnap / leállás'],
-                                                  ['2026-10-01 14:00', 945000, '']]},
+                                                  ['2026-10-01 14:00', 750000, ''],
+                                                  ['2026-10-06 14:00', 657000, ''],
+                                                  ['2026-10-09 14:00', 3850000, ''],
+                                                  ['2026-10-11 15:42', 97500, ''],
+                                                  ['2026-10-13 14:00', 255000, ''],
+                                                  ['2026-10-14 14:00', 255000, '']]},
            'Ügyfelek száma': {'unit': 'fő',
                               'group': 'Értékesítés',
                               'inverted': False,
@@ -979,6 +1167,22 @@ INITIAL_DATABASE = {'groups': ['Pénzügy', 'Értékesítés', 'Marketing', 'Adm
  '_meta': {'revision': 0}}
 INITIAL_ARCHIVE = {}
 
+def _create_v105_upgrade_safety_snapshot():
+    """Keep a one-time untouched copy of existing local data before v1.0.5 edits it."""
+    snapshots = [
+        (DB_FILE, BASE_DIR / "statisztikak.before_v1_0_5.json"),
+        (ARCHIVE_FILE, BASE_DIR / "archivum.before_v1_0_5.json"),
+        (USERS_FILE, BASE_DIR / "users.before_v1_0_5.json"),
+    ]
+    for source, snapshot in snapshots:
+        if source.exists() and not snapshot.exists():
+            try:
+                shutil.copy2(source, snapshot)
+            except Exception:
+                # A snapshot extra védelem; emiatt az alkalmazás nem állhat le.
+                pass
+
+
 def _bootstrap_local_data_files():
     if not USERS_FILE.exists():
         atomic_json_dump(USERS_FILE, INITIAL_USERS, create_backup=False)
@@ -987,6 +1191,8 @@ def _bootstrap_local_data_files():
     if not ARCHIVE_FILE.exists():
         atomic_json_dump(ARCHIVE_FILE, INITIAL_ARCHIVE, create_backup=False)
 
+
+_create_v105_upgrade_safety_snapshot()
 _bootstrap_local_data_files()
 
 
@@ -1105,6 +1311,56 @@ def save_archive(archive_data):
 
 
 # Segédfüggvény a statisztika nevének és egységének megjelenítéséhez
+def load_audit():
+    try:
+        audit_rows, recovery = load_audit_file(AUDIT_FILE)
+        _record_recovery(recovery)
+        return audit_rows
+    except DataFileError as exc:
+        st.error(f"A tevékenységi napló nem tölthető be biztonságosan: {exc}")
+        st.stop()
+
+
+def append_audit_event(
+    action: str,
+    *,
+    stat_name: str = "",
+    summary: str = "",
+    details: Any = None,
+    actor: str | None = None,
+    actor_role: str | None = None,
+) -> None:
+    """Write a non-editable audit entry. Audit failure never destroys the business save."""
+    username = actor if actor is not None else st.session_state.get("username", "")
+    role = actor_role if actor_role is not None else st.session_state.get("user_role", "")
+    event = {
+        "id": secrets.token_hex(12),
+        "timestamp": budapest_now().isoformat(timespec="seconds"),
+        "user": username or "(ismeretlen)",
+        "role": role or "",
+        "action": str(action),
+        "stat": str(stat_name or ""),
+        "summary": str(summary or ""),
+        "details": copy.deepcopy(details) if details is not None else {},
+    }
+    try:
+        append_audit_file(AUDIT_FILE, event)
+    except Exception as exc:
+        # Az üzleti adat mentése ettől még sikeres marad, de az admin figyelmeztetést kap.
+        st.session_state["_scart_audit_warning"] = (
+            f"⚠️ Az adat mentése sikerült, de a tevékenységi napló írása nem: {exc}"
+        )
+
+
+def _audit_summary_from_rows(added_rows, removed_rows):
+    parts = []
+    if added_rows:
+        parts.append(f"{len(added_rows)} sor hozzáadva/módosítva")
+    if removed_rows:
+        parts.append(f"{len(removed_rows)} korábbi sor törölve/módosítva")
+    return "; ".join(parts) if parts else "Nincs sorváltozás"
+
+
 def stat_label(stat_name):
     u = db["stats"].get(stat_name, {}).get("unit", "")
     if u:
@@ -1174,9 +1430,21 @@ if not st.session_state.logged_in:
                     "assigned_groups", []
                 )
                 st.session_state.auth_version = int(users_db[input_user].get("auth_version", 1))
+                append_audit_event(
+                    "Bejelentkezés",
+                    summary="Sikeres bejelentkezés",
+                    actor=input_user,
+                    actor_role=users_db[input_user].get("role", "user"),
+                )
                 st.success("Sikeres bejelentkezés!")
                 st.rerun()
             else:
+                append_audit_event(
+                    "Sikertelen bejelentkezés",
+                    summary="Hibás felhasználónév vagy jelszó",
+                    actor=input_user or "(üres felhasználónév)",
+                    actor_role="",
+                )
                 st.error("Hibás felhasználónév vagy jelszó!")
 
     st.stop()
@@ -1206,6 +1474,8 @@ for recovery_message in RECOVERY_MESSAGES:
 
 if "_scart_flash_warning" in st.session_state:
     st.warning(st.session_state.pop("_scart_flash_warning"))
+if "_scart_audit_warning" in st.session_state:
+    st.warning(st.session_state.pop("_scart_audit_warning"))
 
 # JOGOSULTSÁG ALAPJÁN ELÉRHETŐ STATISZTIKÁK SZŰRÉSE
 if st.session_state.user_role == "admin":
@@ -1233,6 +1503,7 @@ st.sidebar.write(f"Bejelentkezve: **{st.session_state.username}**")
 st.sidebar.caption(f"Jogosultság: {role_label}")
 
 if st.sidebar.button("🚪 Kijelentkezés"):
+    append_audit_event("Kijelentkezés", summary="Felhasználó kijelentkezett")
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.user_role = "user"
@@ -1251,7 +1522,12 @@ menu_options = [
 
 if st.session_state.user_role == "admin":
     menu_options.extend(
-        ["➕ Új Statisztika Létrehozása", "⚙️ Adminisztráció & Archívum"]
+        [
+            "➕ Új Statisztika Létrehozása",
+            "📖 Tevékenységi napló",
+            "💾 Biztonsági mentés",
+            "⚙️ Adminisztráció & Archívum",
+        ]
     )
 
 selected_menu = st.sidebar.radio("Válassz funkciót:", menu_options)
@@ -1361,6 +1637,48 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         indiv_agg = st.sidebar.selectbox(
             "Grafikon nézet:", valid_aggs, key=f"indiv_agg_view_{selected_stat}"
         )
+
+        # --- ADATTÁBLA HÓNAP SZŰKÍTÉS ---
+        # Ez kizárólag az alsó szerkeszthető adattáblát szűri. A teljes adatbázis
+        # érintetlen marad, így egy hónap szerkesztése soha nem törli a többi hónapot.
+        stat_rows_for_month_default = db["stats"][selected_stat].get("data", [])
+        latest_valid_table_date = None
+        for _row in reversed(sorted(stat_rows_for_month_default, key=_stat_data_sort_key)):
+            if not isinstance(_row, (list, tuple)) or not _row:
+                continue
+            _ts = pd.to_datetime(str(_row[0]), format="mixed", errors="coerce")
+            if pd.notna(_ts):
+                latest_valid_table_date = pd.Timestamp(_ts).date()
+                break
+        if latest_valid_table_date is None:
+            latest_valid_table_date = budapest_now().date()
+
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🗓️ Adattábla hónap szűkítés")
+        table_show_all_months = st.sidebar.checkbox(
+            "Összes hónap megjelenítése",
+            value=False,
+            key=f"table_show_all_months_{selected_stat}",
+        )
+        table_month_date = st.sidebar.date_input(
+            "Melyik hónapot mutassa a táblázat?",
+            value=latest_valid_table_date,
+            key=f"table_month_date_{selected_stat}",
+            disabled=table_show_all_months,
+        )
+        table_month_key = (
+            None
+            if table_show_all_months
+            else f"{table_month_date.year:04d}-{table_month_date.month:02d}"
+        )
+        if table_month_key:
+            st.sidebar.caption(
+                f"Az alsó táblázat csak a(z) {table_month_date.year}. "
+                f"{table_month_date.month:02d}. havi sorokat mutatja."
+            )
+        else:
+            st.sidebar.caption("Az alsó táblázat minden rögzített sort mutat.")
+        st.sidebar.caption("✍️ A táblázat módosításai automatikusan mentődnek.")
 
         mode_settings = stat_settings.get(indiv_agg, {})
         valid_goals = ["Nincs", "Fix érték (db/Ft)"]
@@ -1500,10 +1818,27 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     )
                     st.session_state.db["stats"][s_loop]["inverted"] = is_stat_inverted_check
                 save_data(st.session_state.db)
+                append_audit_event(
+                    "Beállítások módosítása",
+                    stat_name=selected_stat,
+                    summary="Az aktuális grafikonbeállítások minden statisztikára átmásolva",
+                    details={"applied_to": list(all_stat_names)},
+                )
                 st.sidebar.success("Minden statisztika megkapta az aktuális beállításokat!")
                 st.rerun()
             elif settings_changed:
                 save_data(st.session_state.db)
+                append_audit_event(
+                    "Beállítások módosítása",
+                    stat_name=selected_stat,
+                    summary="Statisztika grafikon/beállítás módosítva",
+                    details={
+                        "before": original_stat_settings,
+                        "after": current_settings_complete,
+                        "inverted_before": original_inverted,
+                        "inverted_after": is_stat_inverted_check,
+                    },
+                )
         else:
             chart_type = mode_settings.get("chart_type", "Vonaldiagram")
             ymin = str(mode_settings.get("ymin", ""))
@@ -1967,6 +2302,15 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     key=_stat_data_sort_key,
                 )
                 save_data(st.session_state.db)
+                append_audit_event(
+                    "Adat hozzáadása",
+                    stat_name=selected_stat,
+                    summary=f"Kézi adat rögzítve: {full_dt_str} | {input_val} {current_unit}",
+                    details={
+                        "row": [full_dt_str, input_val, input_note],
+                        "source": "kézi adatbevitel",
+                    },
+                )
                 st.success("Adat hozzáadva!")
                 st.rerun()
 
@@ -1981,9 +2325,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
             )
             st.info(
                 "Csak a **Fizetve** státuszú E-számlák számítanak bele. Az E-díjbekérő, "
-                "**Kiállítva**, **Sztornózva** és **Sztornó** sorokat kihagyja. Így egy később "
-                "sztornózott régi számla a következő teljes MiniCRM-importnál az eredeti időszakból "
-                "is kiesik, nem a sztornó hónapjára kerül negatív tételként."
+                "**Kiállítva**, **Sztornózva** és **Sztornó** sorokat kihagyja. A feldolgozás után "
+                "a dátumokat és összegeket egy szerkeszthető táblázatban ellenőrizheted, és csak "
+                "a véglegesítés után kerülnek be a statisztikába."
             )
 
             excel_default_time = st.time_input(
@@ -1999,6 +2343,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 key=f"excel_import_mode_{selected_stat}",
             )
 
+            draft_key = f"_minicrm_import_draft_{selected_stat}"
+            draft_seq_key = f"_minicrm_import_draft_seq_{selected_stat}"
             imported_rows = []
             import_errors = []
             import_stats = {}
@@ -2014,16 +2360,19 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     imported_rows, import_errors, import_stats = parse_minicrm_excel_file(
                         minicrm_file, excel_default_time
                     )
-                    if not import_errors and imported_rows:
-                        preview_df = pd.DataFrame(
-                            [[r[0][:10], r[1]] for r in imported_rows],
-                            columns=["Dátum", f"Összeg ({current_unit})"],
+                    if import_errors:
+                        st.error(
+                            "A MiniCRM fájl feldolgozásakor hiba történt:\n- "
+                            + "\n- ".join(import_errors[:30])
                         )
-                        st.markdown("**Import előnézet – csak dátum és összeg:**")
-                        st.dataframe(preview_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.caption(
+                            f"Feldolgozható napi sorok: **{len(imported_rows)}**. "
+                            "A következő gombbal nyisd meg őket szerkesztésre."
+                        )
                     import_requested = st.button(
-                        "📥 MiniCRM Excel importálása",
-                        key=f"minicrm_import_btn_{selected_stat}",
+                        "🧾 Feldolgozás és szerkesztés",
+                        key=f"minicrm_prepare_btn_{selected_stat}",
                         disabled=bool(import_errors) or not bool(
                             imported_rows or import_stats.get("covered_dates")
                         ),
@@ -2043,7 +2392,9 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         ),
                         key=f"excel_paste_{selected_stat}",
                     )
-                    import_requested = st.form_submit_button("📥 Beillesztett adatok feldolgozása")
+                    import_requested = st.form_submit_button(
+                        "🧾 Feldolgozás és szerkesztés"
+                    )
                 if import_requested:
                     imported_rows, import_errors, import_stats = parse_excel_paste(
                         excel_paste, excel_default_time
@@ -2060,184 +2411,455 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 elif not imported_rows and not import_stats.get("covered_dates"):
                     st.warning("Nem találtam importálható vagy újraszámolható MiniCRM dátumot.")
                 else:
-                    # A MiniCRM exportok jellemzően újra tartalmazzák a korábbi időszakot is.
-                    # Ezért az importált dátumokon a korábbi értéket lecseréljük, nem duplázzuk.
-                    imported_dates = {row[0][:10] for row in imported_rows}
-                    covered_dates = set(import_stats.get("covered_dates", []))
-                    # MiniCRM snapshot importnál az export által lefedett dátumokat újraszámoljuk,
-                    # akkor is, ha egy adott régi számla közben Sztornózva lett és ezért már 0-val
-                    # járul hozzá. Egyszerű kétoszlopos importnál marad a korábbi viselkedés.
-                    replace_dates = covered_dates or imported_dates
-                    old_rows = st.session_state.db["stats"][selected_stat]["data"]
-                    kept_rows = []
-                    replaced_rows = 0
-                    for row in old_rows:
-                        try:
-                            row_day = pd.to_datetime(str(row[0]), format="mixed", errors="coerce")
-                            row_day = row_day.strftime("%Y-%m-%d") if pd.notna(row_day) else None
-                        except Exception:
-                            row_day = None
-                        if row_day in replace_dates:
-                            replaced_rows += 1
-                        else:
-                            kept_rows.append(row)
+                    next_seq = int(st.session_state.get(draft_seq_key, 0)) + 1
+                    st.session_state[draft_seq_key] = next_seq
+                    st.session_state[draft_key] = {
+                        "rows": copy.deepcopy(imported_rows),
+                        "stats": copy.deepcopy(import_stats),
+                        "seq": next_seq,
+                    }
 
-                    kept_rows.extend(imported_rows)
-                    st.session_state.db["stats"][selected_stat]["data"] = sorted(
-                        kept_rows, key=_stat_data_sort_key
-                    )
-                    save_data(st.session_state.db)
+            draft = st.session_state.get(draft_key)
+            if draft is not None:
+                st.markdown("### ✏️ Import ellenőrzése és javítása")
+                st.caption(
+                    "A MiniCRM-ből feldolgozott adatok még **nincsenek elmentve**. "
+                    "Itt ugyanúgy átírhatod a dátumot, időpontot és összeget, új sort is "
+                    "hozzáadhatsz, illetve sort törölhetsz. A véglegesítés után ezek az adatok "
+                    "a lentebbi normál SCART adat-táblázatban is szerkeszthetők maradnak."
+                )
 
-                    skipped = (
-                        int(import_stats.get("skipped_no_date", 0))
-                        + int(import_stats.get("source_skipped_no_date", 0))
-                        + int(import_stats.get("skipped_bad_value", 0))
-                        + int(import_stats.get("skipped_negative", 0))
+                draft_rows = draft.get("rows", [])
+                preview_rows = []
+                for item in draft_rows:
+                    dt_str = str(item[0]).strip() if len(item) > 0 else ""
+                    parts = dt_str.split()
+                    d_part = parts[0] if parts else ""
+                    t_part = parts[1] if len(parts) > 1 else "14:00"
+                    v_part = item[1] if len(item) > 1 else 0
+                    n_part = item[2] if len(item) > 2 else ""
+                    preview_rows.append([d_part, t_part, v_part, n_part])
+
+                import_value_col = f"Érték ({current_unit})"
+                import_preview_df = pd.DataFrame(
+                    preview_rows,
+                    columns=["Dátum", "Időpont", import_value_col, "Megjegyzés"],
+                )
+
+                with st.form(f"minicrm_edit_import_form_{selected_stat}_{draft.get('seq', 0)}"):
+                    edited_import_df = st.data_editor(
+                        import_preview_df,
+                        num_rows="dynamic",
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Dátum": st.column_config.TextColumn(
+                                "Dátum (ÉÉÉÉ-HH-NN)", help="pl. 2026-10-06"
+                            ),
+                            "Időpont": st.column_config.TextColumn(
+                                "Időpont (ÓÓ:PP)", help="pl. 14:00"
+                            ),
+                            import_value_col: st.column_config.NumberColumn(
+                                import_value_col, step=1.0
+                            ),
+                            "Megjegyzés": st.column_config.TextColumn(
+                                "Megjegyzés", help="Ide kézzel is írhatsz korrekciós megjegyzést."
+                            ),
+                        },
+                        key=f"minicrm_import_editor_{selected_stat}_{draft.get('seq', 0)}",
                     )
-                    extra_parts = []
-                    if replaced_rows:
-                        extra_parts.append(f"{replaced_rows} korábbi dátum újraszámolva")
-                    fallback_count = int(import_stats.get("fallback_issue_date", 0))
-                    if fallback_count:
-                        extra_parts.append(f"{fallback_count} tétel kiállítás dátumával számolva")
-                    proforma_count = int(import_stats.get("skipped_proforma", 0))
-                    if proforma_count:
-                        extra_parts.append(f"{proforma_count} díjbekérő kihagyva")
-                    issued_count = int(import_stats.get("skipped_issued", 0))
-                    if issued_count:
-                        extra_parts.append(f"{issued_count} Kiállítva státusz kihagyva")
-                    cancelled_count = int(import_stats.get("skipped_cancelled_original", 0))
-                    cancel_note_count = int(import_stats.get("skipped_cancel_note", 0))
-                    if cancelled_count or cancel_note_count:
-                        extra_parts.append(
-                            f"{cancelled_count} Sztornózva + {cancel_note_count} Sztornó sor kihagyva"
+                    col_import_save, col_import_cancel = st.columns(2)
+                    with col_import_save:
+                        finalize_import = st.form_submit_button(
+                            "💾 Javított adatok végleges importálása",
+                            type="primary",
+                            use_container_width=True,
                         )
-                    other_status = int(import_stats.get("skipped_other_status", 0))
-                    if other_status:
-                        extra_parts.append(f"{other_status} egyéb státusz kihagyva")
-                    if skipped:
-                        extra_parts.append(f"{skipped} nem használható sor kihagyva")
+                    with col_import_cancel:
+                        cancel_import = st.form_submit_button(
+                            "❌ Import előnézet elvetése",
+                            use_container_width=True,
+                        )
 
-                    extra = "; " + "; ".join(extra_parts) if extra_parts else ""
-                    st.session_state["_scart_flash_success"] = (
-                        f"✅ {len(imported_rows)} dátum importálva MiniCRM/Excel adatokból{extra}."
-                    )
+                if cancel_import:
+                    st.session_state.pop(draft_key, None)
                     st.rerun()
+
+                if finalize_import:
+                    finalized_rows = []
+                    validation_errors = []
+                    for row_index, row in edited_import_df.iterrows():
+                        d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
+                        t_val = str(row["Időpont"]).strip() if pd.notnull(row["Időpont"]) else "14:00"
+                        if not t_val or t_val == "nan":
+                            t_val = "14:00"
+
+                        # Üres dátum = a felhasználó törölte a sort az importból.
+                        if not d_val or d_val == "nan":
+                            continue
+
+                        parsed_dt, numeric_val, row_errors = validate_table_row(
+                            d_val, t_val, row[import_value_col]
+                        )
+                        if row_errors:
+                            validation_errors.append(
+                                f"{int(row_index) + 1}. sor: {', '.join(row_errors)}"
+                            )
+                            continue
+
+                        v_val = float(numeric_val)
+                        if v_val.is_integer():
+                            v_val = int(v_val)
+                        n_val = (
+                            str(row["Megjegyzés"]).strip()
+                            if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan"
+                            else ""
+                        )
+                        finalized_rows.append(
+                            [parsed_dt.strftime("%Y-%m-%d %H:%M"), v_val, n_val]
+                        )
+
+                    if validation_errors:
+                        st.error(
+                            "Az import még nincs elmentve. Javítsd az alábbi sorokat:\n- "
+                            + "\n- ".join(validation_errors[:30])
+                        )
+                    else:
+                        finalized_rows.sort(key=_stat_data_sort_key)
+                        draft_stats = draft.get("stats", {})
+                        covered_dates = set(draft_stats.get("covered_dates", []))
+                        edited_dates = {row[0][:10] for row in finalized_rows}
+                        # MiniCRM teljes snapshotnál minden lefedett nap újraszámolódik,
+                        # hogy a később Sztornózva státuszúvá vált régi számla is eltűnjön
+                        # az eredeti időszakból. Kézi/simple importnál csak a ténylegesen
+                        # szerkesztett dátumokat cseréljük.
+                        replace_dates = (covered_dates | edited_dates) if covered_dates else edited_dates
+
+                        old_rows = st.session_state.db["stats"][selected_stat]["data"]
+                        kept_rows = []
+                        replaced_rows = 0
+                        for old_row in old_rows:
+                            try:
+                                row_day = pd.to_datetime(
+                                    str(old_row[0]), format="mixed", errors="coerce"
+                                )
+                                row_day = (
+                                    row_day.strftime("%Y-%m-%d")
+                                    if pd.notna(row_day)
+                                    else None
+                                )
+                            except Exception:
+                                row_day = None
+                            if row_day in replace_dates:
+                                replaced_rows += 1
+                            else:
+                                kept_rows.append(old_row)
+
+                        kept_rows.extend(finalized_rows)
+                        st.session_state.db["stats"][selected_stat]["data"] = sorted(
+                            kept_rows, key=_stat_data_sort_key
+                        )
+                        save_data(st.session_state.db)
+                        append_audit_event(
+                            "MiniCRM/Excel import",
+                            stat_name=selected_stat,
+                            summary=(
+                                f"{len(finalized_rows)} dátumsor véglegesítve; "
+                                f"{replaced_rows} korábbi sor újraszámolva"
+                            ),
+                            details={
+                                "imported_rows": finalized_rows,
+                                "replaced_rows_count": replaced_rows,
+                                "covered_dates": sorted(replace_dates),
+                                "import_stats": draft_stats,
+                            },
+                        )
+
+                        skipped = (
+                            int(draft_stats.get("skipped_no_date", 0))
+                            + int(draft_stats.get("source_skipped_no_date", 0))
+                            + int(draft_stats.get("skipped_bad_value", 0))
+                            + int(draft_stats.get("skipped_negative", 0))
+                        )
+                        extra_parts = []
+                        if replaced_rows:
+                            extra_parts.append(f"{replaced_rows} korábbi sor újraszámolva")
+                        fallback_count = int(draft_stats.get("fallback_issue_date", 0))
+                        if fallback_count:
+                            extra_parts.append(
+                                f"{fallback_count} tétel kiállítás dátumával számolva"
+                            )
+                        proforma_count = int(draft_stats.get("skipped_proforma", 0))
+                        if proforma_count:
+                            extra_parts.append(f"{proforma_count} díjbekérő kihagyva")
+                        issued_count = int(draft_stats.get("skipped_issued", 0))
+                        if issued_count:
+                            extra_parts.append(f"{issued_count} Kiállítva státusz kihagyva")
+                        cancelled_count = int(
+                            draft_stats.get("skipped_cancelled_original", 0)
+                        )
+                        cancel_note_count = int(draft_stats.get("skipped_cancel_note", 0))
+                        if cancelled_count or cancel_note_count:
+                            extra_parts.append(
+                                f"{cancelled_count} Sztornózva + "
+                                f"{cancel_note_count} Sztornó sor kihagyva"
+                            )
+                        other_status = int(draft_stats.get("skipped_other_status", 0))
+                        if other_status:
+                            extra_parts.append(f"{other_status} egyéb státusz kihagyva")
+                        if skipped:
+                            extra_parts.append(f"{skipped} nem használható sor kihagyva")
+
+                        extra = "; " + "; ".join(extra_parts) if extra_parts else ""
+                        st.session_state.pop(draft_key, None)
+                        st.session_state["_scart_flash_success"] = (
+                            f"✅ {len(finalized_rows)} javított napi sor importálva{extra}. "
+                            "Az adatok lent, a normál SCART táblázatban tovább szerkeszthetők."
+                        )
+                        st.rerun()
 
         if "_scart_flash_success" in st.session_state:
             st.success(st.session_state.pop("_scart_flash_success"))
 
         st.markdown("---")
 
-        # --- ADAT-TÁBLÁZAT ÉS MÓDOSÍTÁS ---
-        st.subheader("📋 Adat-táblázat Szerkesztése (Időrendben)")
-
-        stat_data_raw = db["stats"][selected_stat]["data"]
-
-        if stat_data_raw:
-            table_rows = []
-            malformed_table_rows = 0
-            for item in stat_data_raw:
-                if not isinstance(item, (list, tuple)) or len(item) < 2:
-                    malformed_table_rows += 1
-                    continue
-                dt_str = str(item[0]).strip()
-                parts = dt_str.split()
-                d_part = parts[0] if len(parts) > 0 else ""
-                t_part = parts[1] if len(parts) > 1 else "00:00"
-
-                try:
-                    v_part = float(item[1])
-                    if v_part.is_integer():
-                        v_part = int(v_part)
-                except (ValueError, TypeError):
-                    v_part = str(item[1])
-
-                n_part = (
-                    str(item[2]).strip()
-                    if len(item) > 2 and item[2] is not None and str(item[2]) != "nan"
-                    else ""
-                )
-                table_rows.append([d_part, t_part, v_part, n_part])
-
-            if malformed_table_rows:
-                st.warning(f"⚠️ {malformed_table_rows} szerkezetileg hibás sor nem szerkeszthető; a forrásfájlt ellenőrizni kell.")
-
-            df_raw = pd.DataFrame(
-                table_rows,
-                columns=[
-                    "Dátum",
-                    "Időpont",
-                    f"Érték ({current_unit})",
-                    "Megjegyzés",
-                ],
+        # --- ADAT-TÁBLÁZAT, HÓNAP SZŰRÉS ÉS AUTOMATIKUS MENTÉS ---
+        if table_month_key:
+            st.subheader(
+                f"📋 Adat-táblázat – {table_month_date.year}. {table_month_date.month:02d}. hónap"
+            )
+            st.caption(
+                "Csak a kiválasztott hónap sorai láthatók. A többi hónap adatai a háttérben "
+                "változatlanul megmaradnak. A cellák módosítása és az új sorok kitöltése "
+                "automatikusan mentődik."
+            )
+        else:
+            st.subheader("📋 Adat-táblázat – összes adat")
+            st.caption(
+                "Minden rögzített sor látható. A cellák módosítása és az új sorok kitöltése "
+                "automatikusan mentődik."
             )
 
-            with st.form(f"edit_table_form_{selected_stat}"):
-                edited_df = st.data_editor(
-                    df_raw,
-                    num_rows="dynamic",
-                    use_container_width=True,
-                    column_config={
-                        "Dátum": st.column_config.TextColumn(
-                            "Dátum (ÉÉÉÉ-HH-NN)", help="pl. 2026-10-06"
-                        ),
-                        "Időpont": st.column_config.TextColumn(
-                            "Időpont (ÓÓ:PP)", help="pl. 13:28"
-                        ),
-                    },
-                    key=f"editor_{selected_stat}",
+        full_stat_data = db["stats"][selected_stat].get("data", [])
+        visible_source_rows = []
+        hidden_malformed_rows = 0
+
+        for item in full_stat_data:
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                hidden_malformed_rows += 1
+                continue
+
+            if table_month_key is None:
+                visible_source_rows.append(item)
+                continue
+
+            item_ts = pd.to_datetime(str(item[0]), format="mixed", errors="coerce")
+            if pd.isna(item_ts):
+                # Hibás régi sorhoz nem nyúlunk hónapszűrés közben; a háttérben megmarad.
+                hidden_malformed_rows += 1
+                continue
+            if pd.Timestamp(item_ts).strftime("%Y-%m") == table_month_key:
+                visible_source_rows.append(item)
+
+        table_rows = []
+        for item in visible_source_rows:
+            dt_str = str(item[0]).strip()
+            parts = dt_str.split()
+            d_part = parts[0] if len(parts) > 0 else ""
+            t_part = parts[1] if len(parts) > 1 else "00:00"
+
+            try:
+                v_part = float(item[1])
+                if v_part.is_integer():
+                    v_part = int(v_part)
+            except (ValueError, TypeError):
+                v_part = str(item[1])
+
+            n_part = (
+                str(item[2]).strip()
+                if len(item) > 2 and item[2] is not None and str(item[2]) != "nan"
+                else ""
+            )
+            table_rows.append([d_part, t_part, v_part, n_part])
+
+        if hidden_malformed_rows:
+            st.warning(
+                f"⚠️ {hidden_malformed_rows} régi/szerkezetileg hibás sor nincs ebben a "
+                "hónapnézetben, de a SCART megőrzi és nem törli."
+            )
+
+        value_col = f"Érték ({current_unit})"
+        df_raw = pd.DataFrame(
+            table_rows,
+            columns=["Dátum", "Időpont", value_col, "Megjegyzés"],
+        )
+
+        editor_revision = int(db.get("_meta", {}).get("revision", 0))
+        editor_month_token = table_month_key or "ALL"
+        edited_df = st.data_editor(
+            df_raw,
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Dátum": st.column_config.TextColumn(
+                    "Dátum (ÉÉÉÉ-HH-NN)", help="pl. 2026-10-06"
+                ),
+                "Időpont": st.column_config.TextColumn(
+                    "Időpont (ÓÓ:PP)", help="pl. 13:28"
+                ),
+                value_col: st.column_config.NumberColumn(value_col, step=1.0),
+                "Megjegyzés": st.column_config.TextColumn("Megjegyzés"),
+            },
+            key=f"editor_auto_{selected_stat}_{editor_month_token}_{editor_revision}",
+        )
+
+        def _canonical_existing_rows(rows):
+            canonical = []
+            for source_row in rows:
+                if not isinstance(source_row, (list, tuple)) or len(source_row) < 2:
+                    continue
+                parsed = pd.to_datetime(
+                    str(source_row[0]), format="mixed", errors="coerce"
                 )
-                save_table_btn = st.form_submit_button(
-                    "💾 Táblázat Módosításainak Mentése"
+                numeric = pd.to_numeric(source_row[1], errors="coerce")
+                if pd.isna(parsed) or pd.isna(numeric):
+                    canonical.append(
+                        [
+                            str(source_row[0]).strip(),
+                            str(source_row[1]).strip(),
+                            str(source_row[2]).strip() if len(source_row) > 2 else "",
+                        ]
+                    )
+                    continue
+                val = float(numeric)
+                if val.is_integer():
+                    val = int(val)
+                note = (
+                    str(source_row[2]).strip()
+                    if len(source_row) > 2
+                    and source_row[2] is not None
+                    and str(source_row[2]) != "nan"
+                    else ""
                 )
+                canonical.append(
+                    [pd.Timestamp(parsed).strftime("%Y-%m-%d %H:%M"), val, note]
+                )
+            return canonical
 
-            if save_table_btn:
-                updated_data = []
-                validation_errors = []
-                value_col = f"Érték ({current_unit})"
-                for row_index, row in edited_df.iterrows():
-                    d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
-                    t_val = str(row["Időpont"]).strip() if pd.notnull(row["Időpont"]) else "00:00"
-                    if not t_val or t_val == "nan":
-                        t_val = "00:00"
+        edited_rows = []
+        validation_errors = []
+        incomplete_rows = []
+        for row_index, row in edited_df.iterrows():
+            d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
+            t_val = (
+                str(row["Időpont"]).strip()
+                if pd.notnull(row["Időpont"])
+                else "00:00"
+            )
+            raw_value = row[value_col]
+            n_val = (
+                str(row["Megjegyzés"]).strip()
+                if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan"
+                else ""
+            )
 
-                    # Üres dátum = a sor törölve lett / nem kerül mentésre.
-                    if not d_val or d_val == "nan":
-                        continue
+            value_is_blank = pd.isna(raw_value) or str(raw_value).strip() in {"", "nan"}
+            if (not d_val or d_val == "nan") and value_is_blank and not n_val:
+                continue
 
-                    parsed_dt, numeric_val, row_errors = validate_table_row(
-                        d_val, t_val, row[value_col]
-                    )
-                    if row_errors:
-                        validation_errors.append(
-                            f"{int(row_index) + 1}. sor: {', '.join(row_errors)}"
-                        )
-                        continue
+            # Félbehagyott új sor esetén nem mentünk még, hogy gépelés közben megmaradjon.
+            if not d_val or d_val == "nan" or value_is_blank:
+                incomplete_rows.append(int(row_index) + 1)
+                continue
 
-                    v_val = float(numeric_val)
-                    if v_val.is_integer():
-                        v_val = int(v_val)
-                    n_val = (
-                        str(row["Megjegyzés"]).strip()
-                        if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan"
-                        else ""
-                    )
-                    updated_data.append([parsed_dt.strftime("%Y-%m-%d %H:%M"), v_val, n_val])
+            if not t_val or t_val == "nan":
+                t_val = "00:00"
 
-                if validation_errors:
-                    st.error(
-                        "A SCART nem mentette el a táblázatot, mert hibás sorokat talált:\n- "
-                        + "\n- ".join(validation_errors[:20])
-                    )
-                else:
-                    updated_data.sort(key=lambda x: x[0])
-                    st.session_state.db["stats"][selected_stat]["data"] = updated_data
-                    save_data(st.session_state.db)
-                    st.success("Táblázat sikeresen elmentve!")
-                    st.rerun()
-        else:
-            st.info("Még nincsenek rögzített adatok ebben a statisztikában.")
+            parsed_dt, numeric_val, row_errors = validate_table_row(
+                d_val, t_val, raw_value
+            )
+            if row_errors:
+                validation_errors.append(
+                    f"{int(row_index) + 1}. sor: {', '.join(row_errors)}"
+                )
+                continue
+
+            v_val = float(numeric_val)
+            if v_val.is_integer():
+                v_val = int(v_val)
+            edited_rows.append(
+                [parsed_dt.strftime("%Y-%m-%d %H:%M"), v_val, n_val]
+            )
+
+        current_normalized = sorted(
+            _canonical_existing_rows(visible_source_rows), key=_stat_data_sort_key
+        )
+        edited_normalized = sorted(edited_rows, key=_stat_data_sort_key)
+        table_changed = edited_normalized != current_normalized
+
+        if validation_errors:
+            st.error(
+                "Az automatikus mentés várakozik, mert hibás sort találtam:\n- "
+                + "\n- ".join(validation_errors[:20])
+            )
+        elif incomplete_rows:
+            st.info(
+                "✍️ A(z) "
+                + ", ".join(str(i) for i in incomplete_rows[:10])
+                + ". sor még nincs kész. Add meg legalább a dátumot és az értéket; "
+                "utána a SCART automatikusan elmenti."
+            )
+        elif table_changed:
+            # Hónapszűrésnél kizárólag a látható hónapot cseréljük.
+            # Minden más hónap és minden rejtett legacy sor érintetlen marad.
+            kept_rows = []
+            for old_row in full_stat_data:
+                if not isinstance(old_row, (list, tuple)) or len(old_row) < 2:
+                    kept_rows.append(old_row)
+                    continue
+
+                if table_month_key is None:
+                    continue
+
+                old_ts = pd.to_datetime(
+                    str(old_row[0]), format="mixed", errors="coerce"
+                )
+                if pd.isna(old_ts):
+                    kept_rows.append(old_row)
+                    continue
+                if pd.Timestamp(old_ts).strftime("%Y-%m") != table_month_key:
+                    kept_rows.append(old_row)
+
+            kept_rows.extend(edited_rows)
+            st.session_state.db["stats"][selected_stat]["data"] = sorted(
+                kept_rows, key=_stat_data_sort_key
+            )
+            save_data(st.session_state.db)
+            added_audit_rows, removed_audit_rows = _audit_row_diff(
+                current_normalized, edited_normalized
+            )
+            append_audit_event(
+                "Adattábla módosítása",
+                stat_name=selected_stat,
+                summary=_audit_summary_from_rows(
+                    added_audit_rows, removed_audit_rows
+                ),
+                details={
+                    "month_filter": table_month_key or "Összes adat",
+                    "added_or_new_values": added_audit_rows,
+                    "removed_or_previous_values": removed_audit_rows,
+                },
+            )
+            st.session_state["_scart_table_autosave_flash"] = (
+                "✅ Táblázat automatikusan elmentve. A többi hónap adatai nem változtak."
+                if table_month_key
+                else "✅ Táblázat automatikusan elmentve."
+            )
+            st.rerun()
+
+        if "_scart_table_autosave_flash" in st.session_state:
+            st.success(st.session_state.pop("_scart_table_autosave_flash"))
 
 # 2. TÖBB STATISZTIKA ÖSSZEVETÉSE
 elif selected_menu == "📈 Több Statisztika Összevetése":
@@ -2856,6 +3478,17 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
                         "data": [],
                     }
                     save_data(st.session_state.db)
+                    append_audit_event(
+                        "Statisztika létrehozása",
+                        stat_name=new_stat_name,
+                        summary=f"Új statisztika létrehozva: {new_stat_name}",
+                        details={
+                            "unit": new_stat_unit,
+                            "group": new_stat_group,
+                            "inverted": is_new_inverted,
+                            "description": new_stat_desc,
+                        },
+                    )
                     st.success(f"Sikeresen létrehozva: {new_stat_name}")
                     st.rerun()
                 else:
@@ -2863,7 +3496,274 @@ elif selected_menu == "➕ Új Statisztika Létrehozása":
             else:
                 st.warning("Adj meg egy nevet!")
 
-# 5. ADMINISZTRÁCIÓ & ARCHÍVUM (CSAK ADMIN)
+# 5. TEVÉKENYSÉGI NAPLÓ / "KÖNYV" (CSAK ADMIN)
+elif selected_menu == "📖 Tevékenységi napló":
+    st.title(f"📖 {SCART_NAME} – Admin tevékenységi napló")
+    st.info(
+        "Ez a napló nem szerkeszthető a felületről. Megmutatja, hogy ki, mikor és milyen "
+        "fontos módosítást végzett. A v1.0.6 előtti műveletek felhasználója utólag nem "
+        "állapítható meg; a napló a frissítés után kezd részletesen gyűjteni."
+    )
+
+    audit_entries = load_audit()
+    if not audit_entries:
+        st.info("A tevékenységi napló még üres. Az első új művelettől automatikusan telni fog.")
+    else:
+        audit_df = pd.DataFrame(audit_entries)
+        for required_col in ["timestamp", "user", "role", "action", "stat", "summary", "id"]:
+            if required_col not in audit_df.columns:
+                audit_df[required_col] = ""
+        audit_df["_ts"] = pd.to_datetime(audit_df["timestamp"], errors="coerce")
+        audit_df = audit_df.sort_values("_ts", ascending=False, na_position="last")
+
+        valid_ts = audit_df["_ts"].dropna()
+        today = budapest_now().date()
+        today_count = int((valid_ts.dt.date == today).sum()) if not valid_ts.empty else 0
+        unique_users = int(audit_df["user"].replace("", pd.NA).dropna().nunique())
+        last_event = (
+            valid_ts.max().strftime("%Y.%m.%d. %H:%M:%S")
+            if not valid_ts.empty
+            else "–"
+        )
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Összes naplóbejegyzés", len(audit_df))
+        m2.metric("Mai események", today_count)
+        m3.metric("Érintett felhasználók", unique_users)
+        m4.metric("Utolsó esemény", last_event)
+
+        st.markdown("### 🔎 Szűrés")
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            user_options = sorted(x for x in audit_df["user"].dropna().astype(str).unique() if x)
+            selected_audit_users = st.multiselect(
+                "Felhasználó", user_options, key="audit_filter_users"
+            )
+        with f2:
+            action_options = sorted(x for x in audit_df["action"].dropna().astype(str).unique() if x)
+            selected_audit_actions = st.multiselect(
+                "Művelet", action_options, key="audit_filter_actions"
+            )
+        with f3:
+            stat_options = sorted(x for x in audit_df["stat"].dropna().astype(str).unique() if x)
+            selected_audit_stats = st.multiselect(
+                "Statisztika", stat_options, key="audit_filter_stats"
+            )
+
+        search_audit = st.text_input(
+            "Szöveges keresés a naplóban:",
+            placeholder="pl. MiniCRM, Laura, 2026-10-15, törlés...",
+            key="audit_text_search",
+        )
+
+        filtered_audit = audit_df.copy()
+        if selected_audit_users:
+            filtered_audit = filtered_audit[filtered_audit["user"].isin(selected_audit_users)]
+        if selected_audit_actions:
+            filtered_audit = filtered_audit[filtered_audit["action"].isin(selected_audit_actions)]
+        if selected_audit_stats:
+            filtered_audit = filtered_audit[filtered_audit["stat"].isin(selected_audit_stats)]
+        if search_audit.strip():
+            q = search_audit.casefold().strip()
+            haystack = (
+                filtered_audit["timestamp"].astype(str) + " "
+                + filtered_audit["user"].astype(str) + " "
+                + filtered_audit["action"].astype(str) + " "
+                + filtered_audit["stat"].astype(str) + " "
+                + filtered_audit["summary"].astype(str)
+            ).str.casefold()
+            filtered_audit = filtered_audit[haystack.str.contains(q, regex=False, na=False)]
+
+        display_audit = filtered_audit.copy()
+        display_audit["Időpont"] = display_audit["_ts"].apply(
+            lambda x: x.strftime("%Y.%m.%d. %H:%M:%S") if pd.notna(x) else ""
+        )
+        display_audit = display_audit.rename(
+            columns={
+                "user": "Felhasználó",
+                "action": "Művelet",
+                "stat": "Statisztika",
+                "summary": "Rövid leírás",
+            }
+        )
+        st.caption(f"Találatok: {len(display_audit)}")
+        st.dataframe(
+            display_audit[["Időpont", "Felhasználó", "Művelet", "Statisztika", "Rövid leírás"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("### 🔍 Egy bejegyzés részletei")
+        if not filtered_audit.empty:
+            option_rows = filtered_audit.head(500).to_dict("records")
+            option_map = {
+                str(row.get("id", i)): (
+                    f"{pd.to_datetime(row.get('timestamp'), errors='coerce').strftime('%Y.%m.%d. %H:%M:%S') if pd.notna(pd.to_datetime(row.get('timestamp'), errors='coerce')) else row.get('timestamp', '')}"
+                    f" · {row.get('user', '')} · {row.get('action', '')}"
+                    f" · {row.get('stat', '')}"
+                )
+                for i, row in enumerate(option_rows)
+            }
+            selected_event_id = st.selectbox(
+                "Bejegyzés:",
+                options=list(option_map.keys()),
+                format_func=lambda x: option_map[x],
+                key="audit_event_detail_select",
+            )
+            selected_event = next(
+                (row for row in option_rows if str(row.get("id")) == selected_event_id),
+                None,
+            )
+            if selected_event:
+                st.json({k: v for k, v in selected_event.items() if k != "_ts"})
+
+        st.markdown("### ⬇️ Napló export")
+        export_rows = [
+            {k: v for k, v in row.items() if k != "_ts"}
+            for row in filtered_audit.to_dict("records")
+        ]
+        export_stamp = budapest_now().strftime("%Y-%m-%d_%H-%M-%S")
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            st.download_button(
+                "⬇️ Szűrt napló CSV",
+                data=display_audit[["Időpont", "Felhasználó", "Művelet", "Statisztika", "Rövid leírás"]]
+                    .to_csv(index=False)
+                    .encode("utf-8-sig"),
+                file_name=f"SCART_tevekenysegi_naplo_{export_stamp}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        with ec2:
+            st.download_button(
+                "⬇️ Szűrt napló JSON",
+                data=json.dumps(export_rows, ensure_ascii=False, indent=2, default=str).encode("utf-8"),
+                file_name=f"SCART_tevekenysegi_naplo_{export_stamp}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+
+# 6. BIZTONSÁGI MENTÉS (CSAK ADMIN)
+elif selected_menu == "💾 Biztonsági mentés":
+    st.title(f"💾 {SCART_NAME} – Biztonsági mentés")
+    st.info(
+        "Itt bármikor lementheted a SCART aktuális állapotát. A letöltés nem módosít "
+        "és nem töröl semmilyen adatot. Streamlit Community Cloud használatakor érdemes "
+        "minden nagyobb adatbevitel vagy programfrissítés előtt teljes mentést készíteni."
+    )
+
+    backup_stamp = budapest_now().strftime("%Y-%m-%d_%H-%M-%S")
+    backup_db = copy.deepcopy(st.session_state.db)
+    backup_users = copy.deepcopy(users_db)
+    backup_archive = load_archive()
+    backup_audit = load_audit()
+
+    db_bytes = json.dumps(
+        backup_db, ensure_ascii=False, indent=2
+    ).encode("utf-8")
+    users_bytes = json.dumps(
+        backup_users, ensure_ascii=False, indent=2
+    ).encode("utf-8")
+    archive_bytes = json.dumps(
+        backup_archive, ensure_ascii=False, indent=2
+    ).encode("utf-8")
+    audit_bytes = json.dumps(
+        backup_audit, ensure_ascii=False, indent=2
+    ).encode("utf-8")
+
+    total_rows = sum(
+        len(stat_obj.get("data", []))
+        for stat_obj in backup_db.get("stats", {}).values()
+        if isinstance(stat_obj, dict)
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Statisztikák", len(backup_db.get("stats", {})))
+    c2.metric("Összes adatsor", total_rows)
+    c3.metric("Felhasználók", len(backup_users))
+    c4.metric("Naplóbejegyzések", len(backup_audit))
+
+    backup_info = {
+        "scart_version": SCART_VERSION,
+        "created_at": budapest_now().isoformat(timespec="seconds"),
+        "created_by": st.session_state.username,
+        "statistics": len(backup_db.get("stats", {})),
+        "data_rows": total_rows,
+        "users": len(backup_users),
+        "archived_statistics": len(backup_archive),
+        "audit_entries": len(backup_audit),
+    }
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("statisztikak.json", db_bytes)
+        zf.writestr("users.json", users_bytes)
+        zf.writestr("archivum.json", archive_bytes)
+        zf.writestr("tevekenysegi_naplo.json", audit_bytes)
+        zf.writestr(
+            "backup_info.json",
+            json.dumps(backup_info, ensure_ascii=False, indent=2).encode("utf-8"),
+        )
+
+    st.markdown("### 📦 Teljes SCART mentés")
+    st.download_button(
+        "⬇️ Teljes biztonsági mentés letöltése (.zip)",
+        data=zip_buffer.getvalue(),
+        file_name=f"SCART_teljes_backup_{backup_stamp}.zip",
+        mime="application/zip",
+        type="primary",
+        use_container_width=True,
+        key="download_full_scart_backup",
+    )
+    st.caption(
+        "A ZIP tartalmazza a statisztikákat, az archívumot, a tevékenységi naplót és a felhasználói adatbázist is. "
+        "A users.json jogosultsági adatokat és jelszó-hasheket tartalmaz, ezért a teljes mentést "
+        "bizalmas fájlként kezeld."
+    )
+
+    st.markdown("### 📄 Külön fájlok")
+    col_b1, col_b2, col_b3, col_b4 = st.columns(4)
+    with col_b1:
+        st.download_button(
+            "📊 statisztikak.json",
+            data=db_bytes,
+            file_name=f"statisztikak_{backup_stamp}.json",
+            mime="application/json",
+            use_container_width=True,
+            key="download_statistics_backup",
+        )
+    with col_b2:
+        st.download_button(
+            "👥 users.json",
+            data=users_bytes,
+            file_name=f"users_{backup_stamp}.json",
+            mime="application/json",
+            use_container_width=True,
+            key="download_users_backup",
+        )
+    with col_b3:
+        st.download_button(
+            "📂 archivum.json",
+            data=archive_bytes,
+            file_name=f"archivum_{backup_stamp}.json",
+            mime="application/json",
+            use_container_width=True,
+            key="download_archive_backup",
+        )
+    with col_b4:
+        st.download_button(
+            "📖 tevekenysegi_naplo.json",
+            data=audit_bytes,
+            file_name=f"tevekenysegi_naplo_{backup_stamp}.json",
+            mime="application/json",
+            use_container_width=True,
+            key="download_audit_backup",
+        )
+
+    st.success(
+        "✅ A biztonsági mentés mindig a jelenleg betöltött, aktuális SCART-adatokat tartalmazza."
+    )
+
+# 7. ADMINISZTRÁCIÓ & ARCHÍVUM (CSAK ADMIN)
 elif selected_menu == "⚙️ Adminisztráció & Archívum":
     st.title(f"⚙️ {SCART_NAME} – Adminisztráció")
 
@@ -2913,6 +3813,17 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                     "inverted"
                 ] = updated_inverted
                 save_data(st.session_state.db)
+                append_audit_event(
+                    "Statisztika adatainak módosítása",
+                    stat_name=selected_edit_stat,
+                    summary=f"'{selected_edit_stat}' alapadatai módosítva",
+                    details={
+                        "group": updated_group,
+                        "unit": updated_unit,
+                        "description": updated_desc,
+                        "inverted": updated_inverted,
+                    },
+                )
                 st.success(f"'{selected_edit_stat}' beállításai frissítve!")
                 st.rerun()
 
@@ -2956,6 +3867,16 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                             "auth_version": 1,
                         }
                         save_users(users_db)
+                        append_audit_event(
+                            "Felhasználó létrehozása",
+                            summary=f"Új felhasználó létrehozva: {new_username}",
+                            details={
+                                "username": new_username,
+                                "role": new_role,
+                                "assigned_stats": assigned_stats_for_new,
+                                "assigned_groups": assigned_groups_for_new,
+                            },
+                        )
                         st.success(f"'{new_username}' felhasználó sikeresen létrehozva!")
                         st.rerun()
                 else:
@@ -3012,6 +3933,11 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                     if removing_last_admin:
                         st.error("Az utolsó adminisztrátor jogosultsága nem vehető el.")
                     else:
+                        old_user_audit = {
+                            "role": users_db[selected_edit_user].get("role", "user"),
+                            "assigned_stats": list(users_db[selected_edit_user].get("assigned_stats", [])),
+                            "assigned_groups": list(users_db[selected_edit_user].get("assigned_groups", [])),
+                        }
                         if updated_pass:
                             users_db[selected_edit_user]["password"] = hash_password(updated_pass)
                         users_db[selected_edit_user]["role"] = updated_role
@@ -3023,6 +3949,20 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                         save_users(users_db)
                         if selected_edit_user == st.session_state.username:
                             st.session_state.auth_version = users_db[selected_edit_user]["auth_version"]
+                        append_audit_event(
+                            "Felhasználó módosítása",
+                            summary=f"Felhasználói jogosultságok módosítva: {selected_edit_user}",
+                            details={
+                                "username": selected_edit_user,
+                                "before": old_user_audit,
+                                "after": {
+                                    "role": updated_role,
+                                    "assigned_stats": updated_assigned_stats,
+                                    "assigned_groups": updated_assigned_groups,
+                                },
+                                "password_changed": bool(updated_pass),
+                            },
+                        )
                         st.success(f"'{selected_edit_user}' adatai frissítve!")
                         st.rerun()
 
@@ -3056,6 +3996,7 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
             if st.button("✅ Igen, biztosan törlöm véglegesen", type="primary"):
                 target = st.session_state.confirm_delete_stat
                 if target in st.session_state.db["stats"]:
+                    deleted_stat_snapshot = copy.deepcopy(st.session_state.db["stats"][target])
                     del st.session_state.db["stats"][target]
                     if (
                         "settings" in st.session_state.db
@@ -3070,6 +4011,16 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                             users_db[u_k]["assigned_stats"].remove(target)
                             users_db[u_k]["auth_version"] = int(users_db[u_k].get("auth_version", 1)) + 1
                     save_users(users_db)
+                    append_audit_event(
+                        "Statisztika végleges törlése",
+                        stat_name=target,
+                        summary=f"Statisztika véglegesen törölve: {target}",
+                        details={
+                            "group": deleted_stat_snapshot.get("group", ""),
+                            "unit": deleted_stat_snapshot.get("unit", ""),
+                            "deleted_rows": len(deleted_stat_snapshot.get("data", [])),
+                        },
+                    )
 
                     st.session_state.confirm_delete_stat = None
                     st.success(f"'{target}' sikeresen törölve!")
@@ -3094,6 +4045,11 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
             ):
                 st.session_state.db["groups"].append(new_group_name)
                 save_data(st.session_state.db)
+                append_audit_event(
+                    "Részleg létrehozása",
+                    summary=f"Új részleg létrehozva: {new_group_name}",
+                    details={"group": new_group_name},
+                )
                 st.success(f"'{new_group_name}' sikeresen létrehozva!")
                 st.rerun()
             else:
@@ -3120,6 +4076,11 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                         users_db[u_k]["assigned_groups"].remove(group_to_delete)
                         users_db[u_k]["auth_version"] = int(users_db[u_k].get("auth_version", 1)) + 1
                 save_users(users_db)
+                append_audit_event(
+                    "Részleg törlése",
+                    summary=f"Részleg törölve: {group_to_delete}",
+                    details={"group": group_to_delete},
+                )
 
                 st.success(f"'{group_to_delete}' részleg törölve!")
                 st.rerun()
@@ -3153,6 +4114,14 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                 del st.session_state.db["stats"][stat_to_archive]
                 st.session_state.db.get("settings", {}).pop(stat_to_archive, None)
                 save_data(st.session_state.db)
+                append_audit_event(
+                    "Statisztika archiválása",
+                    stat_name=stat_to_archive,
+                    summary=f"Statisztika archiválva: {stat_to_archive}",
+                    details={
+                        "rows": len(archive_db[stat_to_archive].get("stat", {}).get("data", []))
+                    },
+                )
                 st.success("A statisztika archiválva és az aktív listából eltávolítva.")
                 st.rerun()
 
@@ -3182,6 +4151,12 @@ elif selected_menu == "⚙️ Adminisztráció & Archívum":
                     save_data(st.session_state.db)
                     del archive_db[stat_to_restore]
                     save_archive(archive_db)
+                    append_audit_event(
+                        "Statisztika visszaállítása",
+                        stat_name=stat_to_restore,
+                        summary=f"Statisztika visszaállítva az archívumból: {stat_to_restore}",
+                        details={"rows": len(stat_payload.get("data", [])) if isinstance(stat_payload, dict) else 0},
+                    )
                     st.success("Visszaállítva és az archívumból eltávolítva!")
                     st.rerun()
         else:
