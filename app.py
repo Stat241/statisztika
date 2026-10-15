@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import shutil
 import tempfile
@@ -23,7 +24,7 @@ import pandas as pd
 from filelock import FileLock, Timeout
 
 SCART_NAME = "SCART"
-SCART_VERSION = "1.0.0"
+SCART_VERSION = "1.0.1"
 APP_TIMEZONE = ZoneInfo("Europe/Budapest")
 
 DAILY_LABEL = "Napi adatok"
@@ -428,6 +429,334 @@ def validate_table_row(date_text: str, time_text: str, value: Any):
     if not pd.isna(numeric) and float(numeric) < 0:
         errors.append("negatív érték")
     return parsed, numeric, errors
+
+
+def _looks_like_time(value: Any) -> bool:
+    """Return True for simple Excel-style time cells such as 14:00 or 14:00:30."""
+    text = str(value).strip()
+    parts = text.split(":")
+    if len(parts) not in (2, 3):
+        return False
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+        second = int(parts[2]) if len(parts) == 3 else 0
+    except ValueError:
+        return False
+    return 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59
+
+
+def _parse_excel_number(value: Any):
+    """Parse Hungarian/Excel numeric text, including spaces, Ft/db text and comma decimals."""
+    raw = str(value).strip().replace("\xa0", " ").replace("−", "-")
+    if not raw:
+        return None
+
+    # Keep only characters that can belong to a number. This also tolerates
+    # cells copied as e.g. "1 250 000 Ft" or "1.250.000 Ft".
+    clean = re.sub(r"[^0-9,.+-]", "", raw.replace(" ", ""))
+    if not clean:
+        return None
+
+    if "," in clean and "." in clean:
+        # Hungarian formatting: 1.234.567,89
+        if clean.rfind(",") > clean.rfind("."):
+            clean = clean.replace(".", "").replace(",", ".")
+        else:
+            # International formatting: 1,234,567.89
+            clean = clean.replace(",", "")
+    elif "," in clean:
+        if clean.count(",") == 1:
+            clean = clean.replace(",", ".")
+        else:
+            clean = clean.replace(",", "")
+    elif clean.count(".") > 1:
+        clean = clean.replace(".", "")
+    elif clean.count(".") == 1:
+        left, right = clean.split(".", 1)
+        # In Hungarian Excel a single dot followed by three digits is usually
+        # a thousands separator, e.g. 1.500 -> 1500.
+        if left.lstrip("+-").isdigit() and right.isdigit() and len(right) == 3:
+            clean = left + right
+
+    try:
+        return float(clean)
+    except ValueError:
+        return None
+
+
+def _normalize_minicrm_header(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _parse_date_cell(value: Any):
+    """Parse an Excel/clipboard date using Hungarian day-first conventions."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return pd.NaT
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return pd.Timestamp(value)
+    parsed = pd.to_datetime(value, format="mixed", dayfirst=True, errors="coerce")
+    if pd.isna(parsed):
+        parsed = pd.to_datetime(value, dayfirst=True, errors="coerce")
+    return parsed
+
+
+def _finish_minicrm_rows(date_value_pairs: list[tuple[Any, Any]], default_time):
+    """Create one SCART row per calendar date from MiniCRM date/amount pairs."""
+    daily_totals = {}
+    skipped_no_date = 0
+    skipped_bad_value = 0
+    skipped_negative = 0
+
+    for raw_date, raw_value in date_value_pairs:
+        parsed_date = _parse_date_cell(raw_date)
+        if pd.isna(parsed_date):
+            skipped_no_date += 1
+            continue
+
+        numeric_value = _parse_excel_number(raw_value)
+        if numeric_value is None:
+            skipped_bad_value += 1
+            continue
+        if numeric_value < 0:
+            # A SCART jelenlegi adatsémája nem enged negatív statisztikaértéket.
+            skipped_negative += 1
+            continue
+
+        day_key = pd.Timestamp(parsed_date).normalize()
+        daily_totals[day_key] = daily_totals.get(day_key, 0.0) + float(numeric_value)
+
+    parsed_rows = []
+    for day_key in sorted(daily_totals):
+        ts = day_key + pd.Timedelta(
+            hours=int(default_time.hour),
+            minutes=int(default_time.minute),
+            seconds=int(getattr(default_time, "second", 0)),
+        )
+        value_out = float(daily_totals[day_key])
+        if value_out.is_integer():
+            value_out = int(value_out)
+        parsed_rows.append([ts.strftime("%Y-%m-%d %H:%M"), value_out, ""])
+
+    stats = {
+        "source_rows": len(date_value_pairs),
+        "imported_dates": len(parsed_rows),
+        "skipped_no_date": skipped_no_date,
+        "skipped_bad_value": skipped_bad_value,
+        "skipped_negative": skipped_negative,
+    }
+    return parsed_rows, stats
+
+
+def parse_minicrm_dataframe(df: pd.DataFrame, default_time):
+    """Extract MiniCRM cash-receipt data while saving only date + amount.
+
+    The saved SCART data contains only payment date and net amount. When the
+    MiniCRM export also contains document name/status, those columns are used
+    only as filters so paid pro-forma invoices are not counted a second time.
+    """
+    if df is None or df.empty:
+        return [], ["Az Excel nem tartalmaz feldolgozható sorokat."], {}
+
+    header_map = {
+        _normalize_minicrm_header(col): col
+        for col in df.columns
+    }
+    payment_key = _normalize_minicrm_header("Számla: Kifizetés dátuma")
+    amount_key = _normalize_minicrm_header("Számla: Nettó összeg")
+    name_key = _normalize_minicrm_header("Adatlap: Név")
+    status_key = _normalize_minicrm_header("Adatlap: Státusz")
+
+    if payment_key not in header_map or amount_key not in header_map:
+        return [], [
+            "A MiniCRM Excelből hiányzik a 'Számla: Kifizetés dátuma' vagy "
+            "a 'Számla: Nettó összeg' oszlop."
+        ], {}
+
+    work = df.copy()
+    skipped_proforma = 0
+    skipped_status = 0
+
+    if name_key in header_map:
+        name_col = header_map[name_key]
+        proforma_mask = work[name_col].astype(str).str.contains(
+            r"\(E-díjbekérő\)", case=False, na=False, regex=True
+        )
+        skipped_proforma = int(proforma_mask.sum())
+        work = work.loc[~proforma_mask]
+
+    if status_key in header_map:
+        status_col = header_map[status_key]
+        paid_mask = work[status_col].astype(str).str.strip().str.casefold() == "fizetve"
+        skipped_status = int((~paid_mask).sum())
+        work = work.loc[paid_mask]
+
+    date_col = header_map[payment_key]
+    amount_col = header_map[amount_key]
+    pairs = list(work[[date_col, amount_col]].itertuples(index=False, name=None))
+    rows, stats = _finish_minicrm_rows(pairs, default_time)
+    stats["skipped_proforma"] = skipped_proforma
+    stats["skipped_status"] = skipped_status
+    return rows, [], stats
+
+
+def parse_minicrm_excel_file(uploaded_file, default_time):
+    """Read the first sheet of a MiniCRM .xlsx export and extract date + amount."""
+    try:
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(0)
+        df = pd.read_excel(uploaded_file, sheet_name=0)
+    except Exception as exc:
+        return [], [f"A MiniCRM Excel nem olvasható: {exc}"], {}
+    return parse_minicrm_dataframe(df, default_time)
+
+
+def parse_excel_paste(pasted_text: str, default_time) -> tuple[list, list, dict]:
+    """Parse rows copied from Excel, including the full MiniCRM export.
+
+    MiniCRM mode is detected from the header. In that mode SCART uses only:
+      - Számla: Kifizetés dátuma
+      - Számla: Nettó összeg
+
+    All other MiniCRM columns are ignored, blank payment dates are skipped, and
+    rows with the same payment date are summed into one SCART point.
+
+    Simple layouts are still supported:
+      Dátum | Érték
+      Dátum | Érték | Megjegyzés
+      Dátum | Időpont | Érték | Megjegyzés
+    """
+    raw_lines = [line for line in str(pasted_text or "").splitlines() if line.strip()]
+    if not raw_lines:
+        return [], [], {}
+
+    first_cells = [cell.strip() for cell in raw_lines[0].split("\t")]
+    if len(first_cells) == 1 and ";" in raw_lines[0]:
+        first_cells = [cell.strip() for cell in raw_lines[0].split(";")]
+
+    normalized_headers = [_normalize_minicrm_header(c) for c in first_cells]
+    payment_header = _normalize_minicrm_header("Számla: Kifizetés dátuma")
+    amount_header = _normalize_minicrm_header("Számla: Nettó összeg")
+
+    # Full MiniCRM clipboard export: use only the two requested columns.
+    if payment_header in normalized_headers and amount_header in normalized_headers:
+        date_idx = normalized_headers.index(payment_header)
+        amount_idx = normalized_headers.index(amount_header)
+        name_header = _normalize_minicrm_header("Adatlap: Név")
+        status_header = _normalize_minicrm_header("Adatlap: Státusz")
+        name_idx = normalized_headers.index(name_header) if name_header in normalized_headers else None
+        status_idx = normalized_headers.index(status_header) if status_header in normalized_headers else None
+
+        pairs = []
+        malformed = []
+        skipped_proforma = 0
+        skipped_status = 0
+        for line_no, raw_line in enumerate(raw_lines[1:], start=2):
+            cells = [cell.strip() for cell in raw_line.split("\t")]
+            if len(cells) == 1 and ";" in raw_line:
+                cells = [cell.strip() for cell in raw_line.split(";")]
+            needed_indices = [date_idx, amount_idx]
+            if name_idx is not None:
+                needed_indices.append(name_idx)
+            if status_idx is not None:
+                needed_indices.append(status_idx)
+            if max(needed_indices) >= len(cells):
+                malformed.append(f"{line_no}. sor: hiányos MiniCRM sor")
+                continue
+
+            if name_idx is not None and "(e-díjbekérő)" in cells[name_idx].casefold():
+                skipped_proforma += 1
+                continue
+            if status_idx is not None and cells[status_idx].strip().casefold() != "fizetve":
+                skipped_status += 1
+                continue
+
+            pairs.append((cells[date_idx], cells[amount_idx]))
+
+        rows, stats = _finish_minicrm_rows(pairs, default_time)
+        stats["mode"] = "minicrm"
+        stats["skipped_proforma"] = skipped_proforma
+        stats["skipped_status"] = skipped_status
+        return rows, malformed, stats
+
+    # Backward-compatible simple Excel paste mode.
+    parsed_rows = []
+    errors = []
+
+    for line_no, raw_line in enumerate(raw_lines, start=1):
+        cells = [cell.strip() for cell in raw_line.split("\t")]
+        if len(cells) == 1 and ";" in raw_line:
+            cells = [cell.strip() for cell in raw_line.split(";")]
+
+        if line_no == 1:
+            header = " ".join(cells).lower()
+            has_date_header = any(k in header for k in ("dátum", "datum", "date"))
+            has_value_header = any(k in header for k in ("érték", "ertek", "value", "összeg", "osszeg"))
+            if has_date_header and has_value_header:
+                continue
+
+        if len(cells) < 2:
+            errors.append(f"{line_no}. sor: legalább Dátum és Érték szükséges")
+            continue
+
+        date_cell = cells[0]
+        time_cell = ""
+        value_cell = ""
+        note_cell = ""
+
+        if len(cells) >= 3 and _looks_like_time(cells[1]):
+            time_cell = cells[1]
+            value_cell = cells[2]
+            note_cell = " | ".join(c for c in cells[3:] if c)
+        else:
+            value_cell = cells[1]
+            note_cell = " | ".join(c for c in cells[2:] if c)
+
+        parsed_date = _parse_date_cell(date_cell)
+        numeric_value = _parse_excel_number(value_cell)
+        row_errors = []
+        if pd.isna(parsed_date):
+            row_errors.append("hibás dátum")
+        if numeric_value is None:
+            row_errors.append("hibás számérték")
+        elif numeric_value < 0:
+            row_errors.append("negatív érték")
+
+        if row_errors:
+            errors.append(f"{line_no}. sor: {', '.join(row_errors)}")
+            continue
+
+        ts = pd.Timestamp(parsed_date)
+        if time_cell:
+            time_parts = [int(part) for part in time_cell.split(":")]
+            hour = time_parts[0]
+            minute = time_parts[1]
+            second = time_parts[2] if len(time_parts) == 3 else 0
+            ts = ts.normalize() + pd.Timedelta(hours=hour, minutes=minute, seconds=second)
+        elif ts.hour == 0 and ts.minute == 0 and ts.second == 0:
+            ts = ts.normalize() + pd.Timedelta(
+                hours=int(default_time.hour),
+                minutes=int(default_time.minute),
+                seconds=int(getattr(default_time, "second", 0)),
+            )
+
+        value_out = float(numeric_value)
+        if value_out.is_integer():
+            value_out = int(value_out)
+        parsed_rows.append([ts.strftime("%Y-%m-%d %H:%M"), value_out, note_cell])
+
+    return parsed_rows, errors, {"mode": "simple", "source_rows": len(parsed_rows)}
+
+
+def _stat_data_sort_key(row):
+    """Chronological sort key that safely pushes malformed legacy rows to the end."""
+    try:
+        ts = pd.to_datetime(str(row[0]), format="mixed", errors="coerce")
+    except Exception:
+        ts = pd.NaT
+    if pd.isna(ts):
+        return (1, pd.Timestamp.max)
+    return (0, pd.Timestamp(ts))
 
 
 # ================= SCART STREAMLIT FELÜLET =================
@@ -1473,7 +1802,7 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     except Exception:
                         pass
 
-                xaxis_range = [-0.5, max(unique_x) + 0.5] if len(unique_x) > 1 else [-0.5, 0.5]
+                xaxis_range = [0, max(unique_x) + 0.5] if len(unique_x) > 1 else [0, 0.5]
 
                 layout_args = dict(
                     title=dict(
@@ -1540,13 +1869,142 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 )
                 st.session_state.db["stats"][selected_stat]["data"] = sorted(
                     st.session_state.db["stats"][selected_stat]["data"],
-                    key=lambda x: pd.to_datetime(
-                        str(x[0]), format="mixed", errors="coerce"
-                    ),
+                    key=_stat_data_sort_key,
                 )
                 save_data(st.session_state.db)
                 st.success("Adat hozzáadva!")
                 st.rerun()
+
+        st.markdown("---")
+
+        # --- MINICRM / EXCEL IMPORT ---
+        with st.expander("📥 MiniCRM / Excel import", expanded=False):
+            st.caption(
+                "A teljes MiniCRM Excel táblát is használhatod. A SCART a statisztikába csak "
+                "a **Számla: Kifizetés dátuma** és a **Számla: Nettó összeg** értékeit menti."
+            )
+            st.info(
+                "A díjbekérőket és a nem Fizetve státuszú sorokat automatikusan kihagyja, hogy "
+                "ugyanaz a befizetés ne számolódjon kétszer. Az azonos kifizetési dátumú tételeket "
+                "összeadja, így egy dátumhoz egy összeg kerül."
+            )
+
+            excel_default_time = st.time_input(
+                "Importált dátumok időpontja:",
+                value=datetime.strptime("14:00", "%H:%M").time(),
+                key=f"excel_default_time_{selected_stat}",
+            )
+
+            import_mode = st.radio(
+                "Hogyan szeretnéd betölteni?",
+                ["MiniCRM Excel fájl (.xlsx)", "Beillesztés Excelből"],
+                horizontal=True,
+                key=f"excel_import_mode_{selected_stat}",
+            )
+
+            imported_rows = []
+            import_errors = []
+            import_stats = {}
+            import_requested = False
+
+            if import_mode == "MiniCRM Excel fájl (.xlsx)":
+                minicrm_file = st.file_uploader(
+                    "MiniCRM Excel kiválasztása",
+                    type=["xlsx", "xlsm"],
+                    key=f"minicrm_file_{selected_stat}",
+                )
+                if minicrm_file is not None:
+                    imported_rows, import_errors, import_stats = parse_minicrm_excel_file(
+                        minicrm_file, excel_default_time
+                    )
+                    if not import_errors and imported_rows:
+                        preview_df = pd.DataFrame(
+                            [[r[0][:10], r[1]] for r in imported_rows],
+                            columns=["Dátum", f"Összeg ({current_unit})"],
+                        )
+                        st.markdown("**Import előnézet – csak dátum és összeg:**")
+                        st.dataframe(preview_df, use_container_width=True, hide_index=True)
+                    import_requested = st.button(
+                        "📥 MiniCRM Excel importálása",
+                        key=f"minicrm_import_btn_{selected_stat}",
+                        disabled=bool(import_errors) or not bool(imported_rows),
+                    )
+            else:
+                st.caption(
+                    "Nyisd meg a MiniCRM-ből exportált Excelt, jelöld ki a teljes táblázatot "
+                    "a fejléccel együtt, másold ki, majd illeszd be ide."
+                )
+                with st.form(f"excel_paste_form_{selected_stat}", clear_on_submit=True):
+                    excel_paste = st.text_area(
+                        "Excelből bemásolt MiniCRM adatok:",
+                        height=220,
+                        placeholder=(
+                            "Adatlap: Azonosító\t...\tSzámla: Kifizetés dátuma\tSzámla: Nettó összeg\n"
+                            "...\t...\t2026-10-13\t97500"
+                        ),
+                        key=f"excel_paste_{selected_stat}",
+                    )
+                    import_requested = st.form_submit_button("📥 Beillesztett adatok feldolgozása")
+                if import_requested:
+                    imported_rows, import_errors, import_stats = parse_excel_paste(
+                        excel_paste, excel_default_time
+                    )
+
+            if import_requested:
+                if import_errors:
+                    st.error(
+                        "A SCART nem mentett semmit, mert hibás sorokat talált:\n- "
+                        + "\n- ".join(import_errors[:30])
+                    )
+                    if len(import_errors) > 30:
+                        st.warning(f"További {len(import_errors) - 30} hibás sor is található.")
+                elif not imported_rows:
+                    st.warning("Nem találtam importálható dátum + összeg adatot.")
+                else:
+                    # A MiniCRM exportok jellemzően újra tartalmazzák a korábbi időszakot is.
+                    # Ezért az importált dátumokon a korábbi értéket lecseréljük, nem duplázzuk.
+                    imported_dates = {row[0][:10] for row in imported_rows}
+                    old_rows = st.session_state.db["stats"][selected_stat]["data"]
+                    kept_rows = []
+                    replaced_rows = 0
+                    for row in old_rows:
+                        try:
+                            row_day = pd.to_datetime(str(row[0]), format="mixed", errors="coerce")
+                            row_day = row_day.strftime("%Y-%m-%d") if pd.notna(row_day) else None
+                        except Exception:
+                            row_day = None
+                        if row_day in imported_dates:
+                            replaced_rows += 1
+                        else:
+                            kept_rows.append(row)
+
+                    kept_rows.extend(imported_rows)
+                    st.session_state.db["stats"][selected_stat]["data"] = sorted(
+                        kept_rows, key=_stat_data_sort_key
+                    )
+                    save_data(st.session_state.db)
+
+                    skipped = (
+                        int(import_stats.get("skipped_no_date", 0))
+                        + int(import_stats.get("skipped_bad_value", 0))
+                        + int(import_stats.get("skipped_negative", 0))
+                    )
+                    filtered = (
+                        int(import_stats.get("skipped_proforma", 0))
+                        + int(import_stats.get("skipped_status", 0))
+                    )
+                    extra = f"; {replaced_rows} korábbi sor frissítve" if replaced_rows else ""
+                    if filtered:
+                        extra += f"; {filtered} díjbekérő/nem fizetett sor kiszűrve"
+                    if skipped:
+                        extra += f"; {skipped} nem használható sor kihagyva"
+                    st.session_state["_scart_flash_success"] = (
+                        f"✅ {len(imported_rows)} dátum importálva MiniCRM/Excel adatokból{extra}."
+                    )
+                    st.rerun()
+
+        if "_scart_flash_success" in st.session_state:
+            st.success(st.session_state.pop("_scart_flash_success"))
 
         st.markdown("---")
 
@@ -2211,7 +2669,7 @@ elif selected_menu == "📋 Összesítő Dashboard (Kártya Nézet)":
                                     else:
                                         yaxis_card["rangemode"] = "tozero"
 
-                                    xaxis_card_range = [-0.5, max(x_num) + 0.5] if len(x_num) > 1 else [-0.5, 0.5]
+                                    xaxis_card_range = [0, max(x_num) + 0.5] if len(x_num) > 1 else [0, 0.5]
 
                                     fig_card.update_layout(
                                         height=300,
