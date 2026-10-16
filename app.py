@@ -38,7 +38,7 @@ except ImportError:  # A Streamlit Cloudon a requirements.txt telepíti.
     ThreadedConnectionPool = None
 
 SCART_NAME = "SCART"
-SCART_VERSION = "1.0.11"
+SCART_VERSION = "1.0.12"
 APP_TIMEZONE = ZoneInfo("Europe/Budapest")
 
 DAILY_LABEL = "Napi adatok"
@@ -3329,13 +3329,13 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
 
         st.markdown("---")
 
-        # --- ADAT-TÁBLÁZAT, ELLENŐRZÉS ÉS AUTOMATIKUS MENTÉS ---
+        # --- ADAT-TÁBLÁZAT, ELLENŐRZÉS ÉS KÖTEGELT MENTÉS ---
         st.subheader("📋 Adat-táblázat – összes adat")
         st.caption(
             "A táblázat minden rögzített sort mutat, függetlenül a grafikon időszakszűrésétől. "
-            "Az **Ellenőrizve** oszlopban jelölheted az átnézett sorokat. Induláskor egyik sor "
-            "sincs bejelölve; csak azt jelöld meg, amit ténylegesen átnéztél. A **Törlés** oszlop csak kijelöli a "
-            "törlendő sorokat; a tényleges törléshez külön gombot kell megnyomni."
+            "Az **Ellenőrizve** és **Törlés** jelöléseket, valamint a cellamódosításokat most már "
+            "kötegelve kezeljük: jelölj vagy javíts több sort egymás után, majd ments egyszer. "
+            "Így egy-egy pipa nem tölti újra külön az egész oldalt."
         )
 
         full_stat_data = db["stats"][selected_stat].get("data", [])
@@ -3367,8 +3367,6 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 if len(item) > 2 and item[2] is not None and str(item[2]) != "nan"
                 else ""
             )
-            # A régi (3 mezős) sorok is alapból ellenőrizetlenek.
-            # Ha egy sorhoz már tartozik mentett ellenőrzési állapot (4. elem), azt megőrizzük.
             reviewed_part = bool(item[3]) if len(item) > 3 else False
             table_rows.append(
                 [source_index, reviewed_part, False, d_part, t_part, v_part, n_part]
@@ -3395,36 +3393,64 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
         )
 
         editor_revision = int(db.get("_meta", {}).get("revision", 0))
-        edited_df = st.data_editor(
-            df_raw,
-            num_rows="dynamic",
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "_SCART_ROW_ID": None,
-                "Ellenőrizve": st.column_config.CheckboxColumn(
-                    "✅ Ellenőrizve",
-                    help="Jelöld be, ha a sort átnézted és rendben találtad.",
-                    default=False,
-                    width="small",
-                ),
-                "Törlés": st.column_config.CheckboxColumn(
-                    "🗑️ Törlés",
-                    help="A kijelölt sor csak a lentebbi Törlés gomb megnyomásakor törlődik.",
-                    default=False,
-                    width="small",
-                ),
-                "Dátum": st.column_config.TextColumn(
-                    "Dátum (ÉÉÉÉ-HH-NN)", help="pl. 2026-10-06"
-                ),
-                "Időpont": st.column_config.TextColumn(
-                    "Időpont (ÓÓ:PP)", help="pl. 13:28"
-                ),
-                value_col: st.column_config.NumberColumn(value_col, step=1.0),
-                "Megjegyzés": st.column_config.TextColumn("Megjegyzés"),
-            },
-            key=f"editor_auto_{selected_stat}_ALL_{editor_revision}",
-        )
+        with st.form(
+            f"batch_table_form_{selected_stat}_ALL_{editor_revision}",
+            clear_on_submit=False,
+        ):
+            edited_df = st.data_editor(
+                df_raw,
+                num_rows="dynamic",
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "_SCART_ROW_ID": None,
+                    "Ellenőrizve": st.column_config.CheckboxColumn(
+                        "✅ Ellenőrizve",
+                        help=(
+                            "Jelöld be az átnézett sorokat. A jelölések csak a "
+                            "Módosítások mentése gombbal kerülnek az adatbázisba."
+                        ),
+                        default=False,
+                        width="small",
+                    ),
+                    "Törlés": st.column_config.CheckboxColumn(
+                        "🗑️ Törlés",
+                        help=(
+                            "A kijelölt sorokat csak a Kijelölt sorok törlése gomb "
+                            "törli. A sima mentés nem töröl sort."
+                        ),
+                        default=False,
+                        width="small",
+                    ),
+                    "Dátum": st.column_config.TextColumn(
+                        "Dátum (ÉÉÉÉ-HH-NN)", help="pl. 2026-10-06"
+                    ),
+                    "Időpont": st.column_config.TextColumn(
+                        "Időpont (ÓÓ:PP)", help="pl. 13:28"
+                    ),
+                    value_col: st.column_config.NumberColumn(value_col, step=1.0),
+                    "Megjegyzés": st.column_config.TextColumn("Megjegyzés"),
+                },
+                key=f"editor_batch_{selected_stat}_ALL_{editor_revision}",
+            )
+
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                save_table_btn = st.form_submit_button(
+                    "💾 Módosítások mentése",
+                    type="primary",
+                    use_container_width=True,
+                )
+            with btn_col2:
+                delete_selected_rows_btn = st.form_submit_button(
+                    "🗑️ Kijelölt sorok törlése",
+                    use_container_width=True,
+                )
+
+            st.caption(
+                "Tipp: jelölj ki akár sok CRM-sort egymás után, és csak a végén nyomj Mentést. "
+                "A törléshez külön a Törlés oszlopot és a törlési gombot használd."
+            )
 
         def _canonical_existing_rows(rows):
             canonical = []
@@ -3461,171 +3487,196 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                 )
             return canonical
 
-        edited_rows = []
-        validation_errors = []
-        incomplete_rows = []
-        delete_source_ids = set()
+        # A data_editor a formon belül helyben kezeli a kattintásokat. A Python oldal csak
+        # valamelyik submit gomb megnyomásakor fut tovább az aktuális táblázatértékekkel.
+        if save_table_btn or delete_selected_rows_btn:
+            parsed_entries = []
+            validation_errors = []
+            incomplete_rows = []
+            delete_source_ids = set()
+            present_source_ids = set()
 
-        for row_index, row in edited_df.iterrows():
-            row_id_raw = row.get("_SCART_ROW_ID")
-            if pd.notna(row_id_raw):
-                try:
-                    row_id = int(row_id_raw)
-                except (TypeError, ValueError):
+            for row_index, row in edited_df.iterrows():
+                row_id_raw = row.get("_SCART_ROW_ID")
+                if pd.notna(row_id_raw):
+                    try:
+                        row_id = int(row_id_raw)
+                    except (TypeError, ValueError):
+                        row_id = None
+                else:
                     row_id = None
-            else:
-                row_id = None
 
-            delete_raw = row.get("Törlés", False)
-            delete_marked = bool(delete_raw) if pd.notna(delete_raw) else False
-            if delete_marked and row_id is not None:
-                delete_source_ids.add(row_id)
+                if row_id is not None:
+                    present_source_ids.add(row_id)
 
-            reviewed_raw = row.get("Ellenőrizve", False)
-            reviewed_val = bool(reviewed_raw) if pd.notna(reviewed_raw) else False
+                delete_raw = row.get("Törlés", False)
+                delete_marked = bool(delete_raw) if pd.notna(delete_raw) else False
+                if delete_marked and row_id is not None:
+                    delete_source_ids.add(row_id)
 
-            d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
-            t_val = (
-                str(row["Időpont"]).strip()
-                if pd.notnull(row["Időpont"])
-                else "00:00"
-            )
-            raw_value = row[value_col]
-            n_val = (
-                str(row["Megjegyzés"]).strip()
-                if pd.notnull(row["Megjegyzés"]) and str(row["Megjegyzés"]) != "nan"
-                else ""
-            )
+                reviewed_raw = row.get("Ellenőrizve", False)
+                reviewed_val = bool(reviewed_raw) if pd.notna(reviewed_raw) else False
 
-            value_is_blank = pd.isna(raw_value) or str(raw_value).strip() in {"", "nan"}
-            if (not d_val or d_val == "nan") and value_is_blank and not n_val:
-                continue
+                d_val = str(row["Dátum"]).strip() if pd.notnull(row["Dátum"]) else ""
+                t_val = (
+                    str(row["Időpont"]).strip()
+                    if pd.notnull(row["Időpont"])
+                    else "00:00"
+                )
+                raw_value = row[value_col]
+                n_val = (
+                    str(row["Megjegyzés"]).strip()
+                    if pd.notnull(row["Megjegyzés"])
+                    and str(row["Megjegyzés"]) != "nan"
+                    else ""
+                )
 
-            # Félbehagyott új sor esetén nem mentünk még, hogy gépelés közben megmaradjon.
-            if not d_val or d_val == "nan" or value_is_blank:
-                incomplete_rows.append(int(row_index) + 1)
-                continue
+                value_is_blank = pd.isna(raw_value) or str(raw_value).strip() in {"", "nan"}
 
-            if not t_val or t_val == "nan":
-                t_val = "00:00"
+                # Teljesen üres új sor: nem mentjük, nem számít hibának.
+                if row_id is None and (not d_val or d_val == "nan") and value_is_blank and not n_val:
+                    continue
 
-            parsed_dt, numeric_val, row_errors = validate_table_row(
-                d_val, t_val, raw_value
-            )
-            if row_errors:
+                # Új sorra tett Törlés pipa = a félbehagyott új sort egyszerűen nem mentjük.
+                if row_id is None and delete_marked:
+                    continue
+
+                if not d_val or d_val == "nan" or value_is_blank:
+                    incomplete_rows.append(int(row_index) + 1)
+                    continue
+
+                if not t_val or t_val == "nan":
+                    t_val = "00:00"
+
+                parsed_dt, numeric_val, row_errors = validate_table_row(
+                    d_val, t_val, raw_value
+                )
+                if row_errors:
+                    validation_errors.append(
+                        f"{int(row_index) + 1}. sor: {', '.join(row_errors)}"
+                    )
+                    continue
+
+                v_val = float(numeric_val)
+                if v_val.is_integer():
+                    v_val = int(v_val)
+                parsed_entries.append(
+                    (
+                        row_id,
+                        [
+                            parsed_dt.strftime("%Y-%m-%d %H:%M"),
+                            v_val,
+                            n_val,
+                            reviewed_val,
+                        ],
+                    )
+                )
+
+            expected_source_ids = {source_index for source_index, _ in visible_source_entries}
+            missing_source_ids = expected_source_ids - present_source_ids
+            if missing_source_ids:
                 validation_errors.append(
-                    f"{int(row_index) + 1}. sor: {', '.join(row_errors)}"
+                    "Meglévő sor eltűnt a táblázatból. Törléshez ne a data_editor beépített "
+                    "sortörlését használd, hanem a 🗑️ Törlés oszlopot és a külön törlési gombot."
                 )
-                continue
 
-            v_val = float(numeric_val)
-            if v_val.is_integer():
-                v_val = int(v_val)
-            edited_rows.append(
-                [parsed_dt.strftime("%Y-%m-%d %H:%M"), v_val, n_val, reviewed_val]
-            )
+            if validation_errors:
+                st.error(
+                    "A SCART nem mentett, mert hibás módosítást talált:\n- "
+                    + "\n- ".join(validation_errors[:20])
+                )
+            elif incomplete_rows:
+                st.warning(
+                    "A SCART még nem mentett, mert félbehagyott sor van a táblázatban: "
+                    + ", ".join(str(i) for i in incomplete_rows[:10])
+                    + ". Add meg legalább a dátumot és az értéket, vagy töröld az üres új sort."
+                )
+            elif save_table_btn and delete_source_ids:
+                st.warning(
+                    f"🗑️ {len(delete_source_ids)} sor törlésre van kijelölve. "
+                    "A biztonság kedvéért a sima Mentés ilyenkor nem ír az adatbázisba. "
+                    "Ha valóban törölni szeretnéd ezeket, nyomd meg a "
+                    "**Kijelölt sorok törlése** gombot; ha nem, vedd ki a Törlés pipákat."
+                )
+            elif delete_selected_rows_btn and not delete_source_ids:
+                st.info("Nincs törlésre kijelölt meglévő sor.")
+            else:
+                # A szerkezetileg hibás legacy sorokat változatlanul megőrizzük.
+                final_rows = []
+                for old_row in full_stat_data:
+                    if not isinstance(old_row, (list, tuple)) or len(old_row) < 2:
+                        final_rows.append(old_row)
 
-        # A törlés külön művelet. A checkbox önmagában soha nem töröl adatot.
-        if delete_source_ids:
-            st.warning(
-                f"🗑️ **{len(delete_source_ids)} sor törlésre kijelölve.** "
-                "Ellenőrizd a kijelölést, majd nyomd meg a törlés gombot."
-            )
-            delete_selected_rows = st.button(
-                f"🗑️ Kijelölt sorok törlése ({len(delete_source_ids)})",
-                key=f"delete_selected_rows_{selected_stat}_{editor_revision}",
-                type="primary",
-            )
-            if delete_selected_rows:
                 deleted_rows = []
-                kept_rows = []
-                for source_index, old_row in enumerate(full_stat_data):
-                    if source_index in delete_source_ids:
-                        deleted_rows.append(copy.deepcopy(old_row))
+                for row_id, parsed_row in parsed_entries:
+                    if delete_selected_rows_btn and row_id in delete_source_ids:
+                        if row_id is not None and 0 <= row_id < len(full_stat_data):
+                            deleted_rows.append(copy.deepcopy(full_stat_data[row_id]))
+                        continue
+                    final_rows.append(parsed_row)
+
+                final_rows = sorted(final_rows, key=_stat_data_sort_key)
+                current_normalized = sorted(
+                    _canonical_existing_rows([item for _, item in visible_source_entries]),
+                    key=_stat_data_sort_key,
+                )
+                final_normalized = sorted(
+                    _canonical_existing_rows(
+                        [row for row in final_rows if isinstance(row, (list, tuple)) and len(row) >= 2]
+                    ),
+                    key=_stat_data_sort_key,
+                )
+
+                table_changed = final_normalized != current_normalized or bool(deleted_rows)
+
+                if not table_changed:
+                    st.info("Nincs mentendő módosítás.")
+                else:
+                    st.session_state.db["stats"][selected_stat]["data"] = final_rows
+                    save_data(st.session_state.db)
+
+                    added_audit_rows, removed_audit_rows = _audit_row_diff(
+                        current_normalized, final_normalized
+                    )
+                    if delete_selected_rows_btn:
+                        append_audit_event(
+                            "Adatsor törlése",
+                            stat_name=selected_stat,
+                            summary=(
+                                f"{len(deleted_rows)} kijelölt sor törölve; "
+                                "a táblázat többi módosítása ugyanebben a kötegben mentve"
+                            ),
+                            details={
+                                "deleted_rows": deleted_rows,
+                                "delete_method": "Kötegelt Törlés oszlop + törlési gomb",
+                                "added_or_new_values": added_audit_rows,
+                                "removed_or_previous_values": removed_audit_rows,
+                            },
+                        )
+                        st.session_state["_scart_table_batch_flash"] = (
+                            f"✅ {len(deleted_rows)} sor törölve, a kötegelt módosítások elmentve."
+                        )
                     else:
-                        kept_rows.append(old_row)
+                        append_audit_event(
+                            "Adattábla módosítása",
+                            stat_name=selected_stat,
+                            summary=_audit_summary_from_rows(
+                                added_audit_rows, removed_audit_rows
+                            ),
+                            details={
+                                "table_scope": "Összes adat",
+                                "save_mode": "Kötegelt mentés",
+                                "added_or_new_values": added_audit_rows,
+                                "removed_or_previous_values": removed_audit_rows,
+                            },
+                        )
+                        st.session_state["_scart_table_batch_flash"] = (
+                            "✅ A kötegelt táblázatmódosítások elmentve."
+                        )
+                    st.rerun()
 
-                st.session_state.db["stats"][selected_stat]["data"] = sorted(
-                    kept_rows, key=_stat_data_sort_key
-                )
-                save_data(st.session_state.db)
-                append_audit_event(
-                    "Adatsor törlése",
-                    stat_name=selected_stat,
-                    summary=f"{len(deleted_rows)} kijelölt sor törölve",
-                    details={
-                        "deleted_rows": deleted_rows,
-                        "delete_method": "Törlés oszlop + megerősítő gomb",
-                    },
-                )
-                st.session_state["_scart_table_autosave_flash"] = (
-                    f"✅ {len(deleted_rows)} kijelölt sor törölve és naplózva."
-                )
-                st.rerun()
-
-        current_normalized = sorted(
-            _canonical_existing_rows([item for _, item in visible_source_entries]),
-            key=_stat_data_sort_key,
-        )
-        edited_normalized = sorted(edited_rows, key=_stat_data_sort_key)
-        table_changed = edited_normalized != current_normalized
-
-        if validation_errors:
-            st.error(
-                "Az automatikus mentés várakozik, mert hibás sort találtam:\n- "
-                + "\n- ".join(validation_errors[:20])
-            )
-        elif incomplete_rows:
-            st.info(
-                "✍️ A(z) "
-                + ", ".join(str(i) for i in incomplete_rows[:10])
-                + ". sor még nincs kész. Add meg legalább a dátumot és az értéket; "
-                "utána a SCART automatikusan elmenti."
-            )
-        elif delete_source_ids:
-            # Amíg van törlésre kijelölt sor, más táblamódosítást nem írunk ki automatikusan.
-            # Így egy véletlen checkbox-kattintás nem tudja összekeverni a törlést és a szerkesztést.
-            if table_changed:
-                st.info(
-                    "ℹ️ Törlésre kijelölt sor mellett más módosítást is látok. "
-                    "Előbb töröld a kijelölt sorokat vagy vedd ki a Törlés jelölést; "
-                    "utána a többi módosítás automatikusan mentődik."
-                )
-        elif table_changed:
-            # Az összes szerkeszthető sort az új táblázatból építjük újra, miközben
-            # a szerkezetileg hibás legacy sorokat változatlanul megőrizzük.
-            kept_rows = []
-            for old_row in full_stat_data:
-                if not isinstance(old_row, (list, tuple)) or len(old_row) < 2:
-                    kept_rows.append(old_row)
-
-            kept_rows.extend(edited_rows)
-            st.session_state.db["stats"][selected_stat]["data"] = sorted(
-                kept_rows, key=_stat_data_sort_key
-            )
-            save_data(st.session_state.db)
-            added_audit_rows, removed_audit_rows = _audit_row_diff(
-                current_normalized, edited_normalized
-            )
-            append_audit_event(
-                "Adattábla módosítása",
-                stat_name=selected_stat,
-                summary=_audit_summary_from_rows(
-                    added_audit_rows, removed_audit_rows
-                ),
-                details={
-                    "table_scope": "Összes adat",
-                    "added_or_new_values": added_audit_rows,
-                    "removed_or_previous_values": removed_audit_rows,
-                },
-            )
-            st.session_state["_scart_table_autosave_flash"] = (
-                "✅ Táblázat automatikusan elmentve."
-            )
-            st.rerun()
-
-        if "_scart_table_autosave_flash" in st.session_state:
-            st.success(st.session_state.pop("_scart_table_autosave_flash"))
+        if "_scart_table_batch_flash" in st.session_state:
+            st.success(st.session_state.pop("_scart_table_batch_flash"))
 
 # 2. TÖBB STATISZTIKA ÖSSZEVETÉSE
 elif selected_menu == "📈 Több Statisztika Összevetése":
