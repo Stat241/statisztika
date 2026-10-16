@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import copy
 from collections import Counter
-from contextlib import closing
+from contextlib import contextmanager
 import hashlib
 import hmac
 import io
@@ -18,6 +18,7 @@ import re
 import secrets
 import shutil
 import tempfile
+import time
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -30,12 +31,14 @@ from filelock import FileLock, Timeout
 try:
     import psycopg2
     from psycopg2.extras import Json as PgJson
+    from psycopg2.pool import ThreadedConnectionPool
 except ImportError:  # A Streamlit Cloudon a requirements.txt telepíti.
     psycopg2 = None
     PgJson = None
+    ThreadedConnectionPool = None
 
 SCART_NAME = "SCART"
-SCART_VERSION = "1.0.8"
+SCART_VERSION = "1.0.9"
 APP_TIMEZONE = ZoneInfo("Europe/Budapest")
 
 DAILY_LABEL = "Napi adatok"
@@ -1212,22 +1215,126 @@ def _postgres_enabled() -> bool:
     return bool(_postgres_url())
 
 
-def _pg_connect():
-    if not _postgres_enabled():
-        raise DataFileError("A PostgreSQL kapcsolat nincs beállítva a Streamlit Secretsben.")
-    if psycopg2 is None:
+PG_DB_REVISION_CHECK_SECONDS = 15.0
+PG_USERS_REVISION_CHECK_SECONDS = 15.0
+PG_ARCHIVE_REVISION_CHECK_SECONDS = 30.0
+PG_AUDIT_CACHE_SECONDS = 10.0
+PG_REVISION_MAP_CACHE_SECONDS = 2.0
+
+
+@st.cache_resource(show_spinner=False)
+def _pg_pool(postgres_url: str):
+    if ThreadedConnectionPool is None:
         raise DataFileError(
-            "A PostgreSQL illesztőprogram hiányzik. Add a requirements.txt fájlhoz: psycopg2-binary"
+            "A PostgreSQL illesztoprogram hianyzik. Add a requirements.txt fajlhoz: psycopg2-binary"
         )
     try:
-        return psycopg2.connect(
-            _postgres_url(),
-            connect_timeout=12,
+        return ThreadedConnectionPool(
+            1,
+            6,
+            dsn=postgres_url,
+            connect_timeout=8,
             sslmode="require",
             application_name="SCART",
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
         )
     except Exception as exc:
-        raise DataFileError(f"A Supabase/PostgreSQL kapcsolat nem hozható létre: {exc}") from exc
+        raise DataFileError(
+            f"A Supabase/PostgreSQL kapcsolati pool nem hozhato letre: {exc}"
+        ) from exc
+
+
+@contextmanager
+def _pg_connection():
+    """Borrow a PostgreSQL connection from one shared process-level pool."""
+    if not _postgres_enabled():
+        raise DataFileError("A PostgreSQL kapcsolat nincs beallitva a Streamlit Secretsben.")
+
+    pool = _pg_pool(_postgres_url())
+    conn = None
+    discard = False
+    try:
+        conn = pool.getconn()
+        if conn is None or conn.closed:
+            discard = True
+            raise DataFileError("A PostgreSQL kapcsolat nem elerheto.")
+        yield conn
+    except Exception:
+        if conn is not None and not conn.closed:
+            try:
+                conn.rollback()
+            except Exception:
+                discard = True
+        raise
+    finally:
+        if conn is not None:
+            if not conn.closed:
+                try:
+                    # SELECT also opens a transaction in psycopg2. Always return
+                    # an idle connection to the pool.
+                    conn.rollback()
+                except Exception:
+                    discard = True
+            try:
+                pool.putconn(conn, close=discard or bool(conn.closed))
+            except Exception:
+                pass
+
+
+def _pg_get_revision(store_id: str) -> int:
+    # One tiny query refreshes all three store revisions. During the same
+    # Streamlit rerun load_users() and load_data() can reuse the result.
+    now = time.monotonic()
+    cached_map = st.session_state.get("_pg_revision_map_cache")
+    cached_at = float(st.session_state.get("_pg_revision_map_cache_at", 0.0) or 0.0)
+    if (
+        isinstance(cached_map, dict)
+        and (now - cached_at) < PG_REVISION_MAP_CACHE_SECONDS
+        and store_id in cached_map
+    ):
+        return int(cached_map.get(store_id, 0) or 0)
+
+    try:
+        with _pg_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, revision
+                    FROM public.scart_store
+                    WHERE id IN ('database', 'users', 'archive')
+                    """
+                )
+                rows = cur.fetchall()
+        revision_map = {str(row_id): int(revision or 0) for row_id, revision in rows}
+        for required_id in ("database", "users", "archive"):
+            revision_map.setdefault(required_id, 0)
+        st.session_state["_pg_revision_map_cache"] = revision_map
+        st.session_state["_pg_revision_map_cache_at"] = now
+        return int(revision_map.get(store_id, 0) or 0)
+    except DataFileError:
+        raise
+    except Exception as exc:
+        raise DataFileError(
+            f"A(z) '{store_id}' PostgreSQL revizio-lekerdezese sikertelen: {exc}"
+        ) from exc
+
+
+def _pg_note_saved_revision(store_id: str, revision: int) -> None:
+    revision_map = st.session_state.get("_pg_revision_map_cache")
+    if not isinstance(revision_map, dict):
+        revision_map = {}
+    revision_map = dict(revision_map)
+    revision_map[store_id] = int(revision or 0)
+    st.session_state["_pg_revision_map_cache"] = revision_map
+    st.session_state["_pg_revision_map_cache_at"] = time.monotonic()
+
+
+def _revision_check_due(session_key: str, interval_seconds: float) -> bool:
+    last = float(st.session_state.get(session_key, 0.0) or 0.0)
+    return (time.monotonic() - last) >= float(interval_seconds)
 
 
 def _pg_json(value: Any):
@@ -1281,7 +1388,7 @@ def _local_seed_payload(store_id: str, default_payload: Any):
 def _pg_load_store(store_id: str, default_payload: Any, *, initialize_empty: bool = False):
     seed = _local_seed_payload(store_id, default_payload)
     try:
-        with closing(_pg_connect()) as conn:
+        with _pg_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT payload, revision FROM public.scart_store WHERE id = %s",
@@ -1339,77 +1446,75 @@ def _pg_save_store(
     reason: str,
     created_by: str = "",
 ) -> int:
-    """Tranzakciós mentés optimista revízió-ellenőrzéssel és visszaállítási ponttal."""
+    """Transactional save with optimistic revision checking and a snapshot."""
     try:
-        conn = _pg_connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT payload, revision FROM public.scart_store WHERE id = %s FOR UPDATE",
-                    (store_id,),
-                )
-                row = cur.fetchone()
-                current_payload = copy.deepcopy(row[0]) if row and row[0] is not None else {}
-                actual_revision = int(row[1] or 0) if row else 0
+        with _pg_connection() as conn:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT payload, revision FROM public.scart_store WHERE id = %s FOR UPDATE",
+                        (store_id,),
+                    )
+                    row = cur.fetchone()
+                    current_payload = copy.deepcopy(row[0]) if row and row[0] is not None else {}
+                    actual_revision = int(row[1] or 0) if row else 0
 
-                if expected_revision is not None and actual_revision != int(expected_revision):
-                    raise ConcurrentUpdateError(
-                        "Az adatokat közben egy másik munkamenet módosította. "
-                        "A SCART nem írta felül a frissebb változatot."
-                    )
+                    if expected_revision is not None and actual_revision != int(expected_revision):
+                        raise ConcurrentUpdateError(
+                            "Az adatokat kozben egy masik munkamenet modositotta. "
+                            "A SCART nem irta felul a frissebb valtozatot."
+                        )
 
-                if row is not None:
-                    cur.execute(
-                        """
-                        INSERT INTO public.scart_snapshots
-                            (store_id, payload, revision, reason, created_by, created_at)
-                        VALUES (%s, %s, %s, %s, %s, NOW())
-                        """,
-                        (
-                            store_id,
-                            _pg_json(current_payload),
-                            actual_revision,
-                            reason,
-                            created_by or None,
-                        ),
-                    )
-                    new_revision = actual_revision + 1
-                    payload_to_store = copy.deepcopy(payload)
-                    if store_id == "database" and isinstance(payload_to_store, dict):
-                        payload_to_store.setdefault("_meta", {})["revision"] = new_revision
-                    cur.execute(
-                        """
-                        UPDATE public.scart_store
-                        SET payload = %s, revision = %s, updated_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (_pg_json(payload_to_store), new_revision, store_id),
-                    )
-                else:
-                    new_revision = 1
-                    payload_to_store = copy.deepcopy(payload)
-                    if store_id == "database" and isinstance(payload_to_store, dict):
-                        payload_to_store.setdefault("_meta", {})["revision"] = new_revision
-                    cur.execute(
-                        """
-                        INSERT INTO public.scart_store (id, payload, revision, updated_at)
-                        VALUES (%s, %s, %s, NOW())
-                        """,
-                        (store_id, _pg_json(payload_to_store), new_revision),
-                    )
-            conn.commit()
-            return new_revision
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+                    if row is not None:
+                        cur.execute(
+                            """
+                            INSERT INTO public.scart_snapshots
+                                (store_id, payload, revision, reason, created_by, created_at)
+                            VALUES (%s, %s, %s, %s, %s, NOW())
+                            """,
+                            (
+                                store_id,
+                                _pg_json(current_payload),
+                                actual_revision,
+                                reason,
+                                created_by or None,
+                            ),
+                        )
+                        new_revision = actual_revision + 1
+                        payload_to_store = copy.deepcopy(payload)
+                        if store_id == "database" and isinstance(payload_to_store, dict):
+                            payload_to_store.setdefault("_meta", {})["revision"] = new_revision
+                        cur.execute(
+                            """
+                            UPDATE public.scart_store
+                            SET payload = %s, revision = %s, updated_at = NOW()
+                            WHERE id = %s
+                            """,
+                            (_pg_json(payload_to_store), new_revision, store_id),
+                        )
+                    else:
+                        new_revision = 1
+                        payload_to_store = copy.deepcopy(payload)
+                        if store_id == "database" and isinstance(payload_to_store, dict):
+                            payload_to_store.setdefault("_meta", {})["revision"] = new_revision
+                        cur.execute(
+                            """
+                            INSERT INTO public.scart_store (id, payload, revision, updated_at)
+                            VALUES (%s, %s, %s, NOW())
+                            """,
+                            (store_id, _pg_json(payload_to_store), new_revision),
+                        )
+                conn.commit()
+                return new_revision
+            except Exception:
+                conn.rollback()
+                raise
     except ConcurrentUpdateError:
         raise
     except DataFileError:
         raise
     except Exception as exc:
-        raise DataFileError(f"A(z) '{store_id}' PostgreSQL mentése sikertelen: {exc}") from exc
+        raise DataFileError(f"A(z) '{store_id}' PostgreSQL mentese sikertelen: {exc}") from exc
 
 
 def _pg_append_audit_event(event: dict) -> None:
@@ -1421,7 +1526,7 @@ def _pg_append_audit_event(event: dict) -> None:
         "client_timestamp": event.get("timestamp", ""),
     }
     try:
-        with closing(_pg_connect()) as conn:
+        with _pg_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -1445,7 +1550,7 @@ def _pg_append_audit_event(event: dict) -> None:
 
 def _pg_load_audit() -> list[dict]:
     try:
-        with closing(_pg_connect()) as conn:
+        with _pg_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -1489,7 +1594,7 @@ def _pg_healthcheck() -> tuple[bool, str]:
     if not _postgres_enabled():
         return False, "Nincs PostgreSQL Secret beállítva"
     try:
-        with closing(_pg_connect()) as conn:
+        with _pg_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
                 cur.fetchone()
@@ -1518,9 +1623,18 @@ def _record_recovery(message):
         RECOVERY_MESSAGES.append(message)
 
 
-def load_users():
+def load_users(force: bool = False):
     if _postgres_enabled():
         try:
+            cached = st.session_state.get("_users_cache")
+            if isinstance(cached, dict) and not force:
+                if not _revision_check_due("_users_last_revision_check", PG_USERS_REVISION_CHECK_SECONDS):
+                    return cached
+                remote_revision = _pg_get_revision("users")
+                st.session_state["_users_last_revision_check"] = time.monotonic()
+                if remote_revision == int(st.session_state.get("_users_revision", -1)):
+                    return cached
+
             users_raw, revision = _pg_load_store(
                 "users", INITIAL_USERS, initialize_empty=True
             )
@@ -1531,13 +1645,15 @@ def load_users():
                     "users",
                     users,
                     expected_revision=revision,
-                    reason="Felhasználói jelszóformátum automatikus migrációja",
+                    reason="Felhasznaloi jelszoformatum automatikus migracioja",
                     created_by="system",
                 )
                 st.session_state["_users_revision"] = revision
+            st.session_state["_users_cache"] = users
+            st.session_state["_users_last_revision_check"] = time.monotonic()
             return users
         except DataFileError as exc:
-            st.error(f"A SCART nem tud kapcsolódni a tartós felhasználói adatbázishoz: {exc}")
+            st.error(f"A SCART nem tud kapcsolodni a tartos felhasznaloi adatbazishoz: {exc}")
             st.stop()
 
     try:
@@ -1550,7 +1666,7 @@ def load_users():
         st.session_state["_users_digest"] = digest
         return users
     except DataFileError as exc:
-        st.error(f"A SCART nem tudta biztonságosan betölteni a felhasználókat: {exc}")
+        st.error(f"A SCART nem tudta biztonsagosan betolteni a felhasznalokat: {exc}")
         st.stop()
 
 
@@ -1561,18 +1677,22 @@ def save_users(users_dict):
                 "users",
                 users_dict,
                 expected_revision=st.session_state.get("_users_revision"),
-                reason="Felhasználók/jogosultságok módosítása",
+                reason="Felhasznalok/jogosultsagok modositasa",
                 created_by=st.session_state.get("username", ""),
             )
             st.session_state["_users_revision"] = new_revision
+            _pg_note_saved_revision("users", new_revision)
+            st.session_state["_users_cache"] = copy.deepcopy(users_dict)
+            st.session_state["_users_last_revision_check"] = time.monotonic()
             return
         except ConcurrentUpdateError as exc:
+            st.session_state.pop("_users_cache", None)
             st.session_state["_scart_flash_warning"] = (
-                f"⚠️ {exc} A frissebb felhasználói adatokat újratöltöm; ismételd meg a módosítást."
+                f"⚠️ {exc} A frissebb felhasznaloi adatokat ujratoltom; ismeteld meg a modositast."
             )
             st.rerun()
         except DataFileError as exc:
-            st.error(f"A felhasználói adatok tartós mentése sikertelen: {exc}")
+            st.error(f"A felhasznaloi adatok tartos mentese sikertelen: {exc}")
             st.stop()
 
     try:
@@ -1583,11 +1703,11 @@ def save_users(users_dict):
         )
     except ConcurrentUpdateError as exc:
         st.session_state["_scart_flash_warning"] = (
-            f"⚠️ {exc} A frissebb felhasználói adatokat újratöltöm; ismételd meg a módosítást."
+            f"⚠️ {exc} A frissebb felhasznaloi adatokat ujratoltom; ismeteld meg a modositast."
         )
         st.rerun()
     except DataFileError as exc:
-        st.error(f"A felhasználói adatok mentése sikertelen: {exc}")
+        st.error(f"A felhasznaloi adatok mentese sikertelen: {exc}")
         st.stop()
 
 
@@ -1609,19 +1729,29 @@ def fmt_num(val, unit=""):
     return s
 
 
-def load_data():
+def load_data(force: bool = False):
     if _postgres_enabled():
         try:
+            cached = st.session_state.get("db")
+            if isinstance(cached, dict) and not force:
+                if not _revision_check_due("_db_last_revision_check", PG_DB_REVISION_CHECK_SECONDS):
+                    return cached
+                remote_revision = _pg_get_revision("database")
+                st.session_state["_db_last_revision_check"] = time.monotonic()
+                if remote_revision == int(st.session_state.get("_db_revision", -1)):
+                    return cached
+
             loaded_raw, revision = _pg_load_store(
                 "database", INITIAL_DATABASE, initialize_empty=True
             )
             loaded = normalize_database(loaded_raw)
             loaded.setdefault("_meta", {})["revision"] = revision
             st.session_state["_db_revision"] = revision
+            st.session_state["_db_last_revision_check"] = time.monotonic()
             return loaded
         except DataFileError as exc:
-            st.error(f"A SCART tartós PostgreSQL adatbázisa nem tölthető be: {exc}")
-            st.info("Biztonsági okból a rendszer nem vált vissza ideiglenes helyi mentésre.")
+            st.error(f"A SCART tartos PostgreSQL adatbazisa nem toltheto be: {exc}")
+            st.info("Biztonsagi okbol a rendszer nem valt vissza ideiglenes helyi mentesre.")
             st.stop()
 
     try:
@@ -1629,8 +1759,8 @@ def load_data():
         _record_recovery(recovery)
         return loaded
     except DataFileError as exc:
-        st.error(f"A SCART adatbázisa nem tölthető be biztonságosan: {exc}")
-        st.info("A rendszer nem írja felül a hibás adatfájlt. Ellenőrizd a .bak mentést vagy a hibaüzenetet.")
+        st.error(f"A SCART adatbazisa nem toltheto be biztonsagosan: {exc}")
+        st.info("A rendszer nem irja felul a hibas adatfajlt. Ellenorizd a .bak mentest vagy a hibauzenetet.")
         st.stop()
 
 
@@ -1641,17 +1771,18 @@ def save_data(db):
             expected_revision = st.session_state.get(
                 "_db_revision", payload.get("_meta", {}).get("revision", 0)
             )
-            # A belső meta revíziót a PostgreSQL revízióval tartjuk szinkronban.
             payload.setdefault("_meta", {})["revision"] = int(expected_revision or 0)
             new_revision = _pg_save_store(
                 "database",
                 payload,
                 expected_revision=int(expected_revision or 0),
-                reason="SCART statisztikai adatbázis módosítása",
+                reason="SCART statisztikai adatbazis modositasa",
                 created_by=st.session_state.get("username", ""),
             )
             payload["_meta"]["revision"] = new_revision
             st.session_state["_db_revision"] = new_revision
+            _pg_note_saved_revision("database", new_revision)
+            st.session_state["_db_last_revision_check"] = time.monotonic()
             db.clear()
             db.update(payload)
             st.session_state.db = db
@@ -1663,13 +1794,14 @@ def save_data(db):
             fresh = normalize_database(fresh_raw)
             fresh.setdefault("_meta", {})["revision"] = revision
             st.session_state["_db_revision"] = revision
+            st.session_state["_db_last_revision_check"] = time.monotonic()
             st.session_state.db = fresh
             st.session_state["_scart_flash_warning"] = (
-                f"⚠️ {exc} A frissebb adatokat újratöltöttem; kérlek, ismételd meg az előző mentést."
+                f"⚠️ {exc} A frissebb adatokat ujratoltottem; kerlek, ismeteld meg az elozo mentest."
             )
             st.rerun()
         except DataFileError as exc:
-            st.error(f"A SCART tartós mentése sikertelen: {exc}")
+            st.error(f"A SCART tartos mentese sikertelen: {exc}")
             st.stop()
 
     try:
@@ -1683,26 +1815,37 @@ def save_data(db):
         _record_recovery(recovery)
         st.session_state.db = fresh
         st.session_state["_scart_flash_warning"] = (
-            f"⚠️ {exc} A frissebb adatokat újratöltöttem; kérlek, ismételd meg az előző mentést."
+            f"⚠️ {exc} A frissebb adatokat ujratoltottem; kerlek, ismeteld meg az elozo mentest."
         )
         st.rerun()
     except DataFileError as exc:
-        st.error(f"A SCART mentése sikertelen: {exc}")
+        st.error(f"A SCART mentese sikertelen: {exc}")
         st.stop()
 
 
-def load_archive():
+def load_archive(force: bool = False):
     if _postgres_enabled():
         try:
+            cached = st.session_state.get("_archive_cache")
+            if isinstance(cached, dict) and not force:
+                if not _revision_check_due("_archive_last_revision_check", PG_ARCHIVE_REVISION_CHECK_SECONDS):
+                    return cached
+                remote_revision = _pg_get_revision("archive")
+                st.session_state["_archive_last_revision_check"] = time.monotonic()
+                if remote_revision == int(st.session_state.get("_archive_revision", -1)):
+                    return cached
+
             archive, revision = _pg_load_store(
                 "archive", INITIAL_ARCHIVE, initialize_empty=False
             )
             if not isinstance(archive, dict):
-                raise DataFileError("A PostgreSQL archívum formátuma hibás.")
+                raise DataFileError("A PostgreSQL archivum formatuma hibas.")
             st.session_state["_archive_revision"] = revision
+            st.session_state["_archive_cache"] = archive
+            st.session_state["_archive_last_revision_check"] = time.monotonic()
             return archive
         except DataFileError as exc:
-            st.error(f"Az archívum tartós adatbázisból nem tölthető be: {exc}")
+            st.error(f"Az archivum tartos adatbazisbol nem toltheto be: {exc}")
             st.stop()
 
     try:
@@ -1711,7 +1854,7 @@ def load_archive():
         st.session_state["_archive_digest"] = digest
         return archive
     except DataFileError as exc:
-        st.error(f"Az archívum nem tölthető be biztonságosan: {exc}")
+        st.error(f"Az archivum nem toltheto be biztonsagosan: {exc}")
         st.stop()
 
 
@@ -1722,18 +1865,22 @@ def save_archive(archive_data):
                 "archive",
                 archive_data,
                 expected_revision=st.session_state.get("_archive_revision", 0),
-                reason="SCART archívum módosítása",
+                reason="SCART archivum modositasa",
                 created_by=st.session_state.get("username", ""),
             )
             st.session_state["_archive_revision"] = new_revision
+            _pg_note_saved_revision("archive", new_revision)
+            st.session_state["_archive_cache"] = copy.deepcopy(archive_data)
+            st.session_state["_archive_last_revision_check"] = time.monotonic()
             return
         except ConcurrentUpdateError as exc:
+            st.session_state.pop("_archive_cache", None)
             st.session_state["_scart_flash_warning"] = (
-                f"⚠️ {exc} A frissebb archívumot újratöltöm; ismételd meg a műveletet."
+                f"⚠️ {exc} A frissebb archivumot ujratoltom; ismeteld meg a muveletet."
             )
             st.rerun()
         except DataFileError as exc:
-            st.error(f"Az archívum tartós mentése sikertelen: {exc}")
+            st.error(f"Az archivum tartos mentese sikertelen: {exc}")
             st.stop()
 
     try:
@@ -1744,21 +1891,32 @@ def save_archive(archive_data):
         )
     except ConcurrentUpdateError as exc:
         st.session_state["_scart_flash_warning"] = (
-            f"⚠️ {exc} A frissebb archívumot újratöltöm; ismételd meg a műveletet."
+            f"⚠️ {exc} A frissebb archivumot ujratoltom; ismeteld meg a muveletet."
         )
         st.rerun()
     except DataFileError as exc:
-        st.error(f"Az archívum mentése sikertelen: {exc}")
+        st.error(f"Az archivum mentese sikertelen: {exc}")
         st.stop()
 
 
 # Segédfüggvény a statisztika nevének és egységének megjelenítéséhez
-def load_audit():
+def load_audit(force: bool = False):
     if _postgres_enabled():
         try:
-            return _pg_load_audit()
+            cached = st.session_state.get("_audit_cache")
+            loaded_at = float(st.session_state.get("_audit_cache_loaded_at", 0.0) or 0.0)
+            if (
+                isinstance(cached, list)
+                and not force
+                and (time.monotonic() - loaded_at) < PG_AUDIT_CACHE_SECONDS
+            ):
+                return cached
+            rows = _pg_load_audit()
+            st.session_state["_audit_cache"] = rows
+            st.session_state["_audit_cache_loaded_at"] = time.monotonic()
+            return rows
         except DataFileError as exc:
-            st.error(f"A tevékenységi napló nem tölthető be a tartós adatbázisból: {exc}")
+            st.error(f"A tevekenysegi naplo nem toltheto be a tartos adatbazisbol: {exc}")
             st.stop()
 
     try:
@@ -1766,7 +1924,7 @@ def load_audit():
         _record_recovery(recovery)
         return audit_rows
     except DataFileError as exc:
-        st.error(f"A tevékenységi napló nem tölthető be biztonságosan: {exc}")
+        st.error(f"A tevekenysegi naplo nem toltheto be biztonsagosan: {exc}")
         st.stop()
 
 
@@ -1795,6 +1953,8 @@ def append_audit_event(
     try:
         if _postgres_enabled():
             _pg_append_audit_event(event)
+            st.session_state.pop("_audit_cache", None)
+            st.session_state.pop("_audit_cache_loaded_at", None)
         else:
             append_audit_file(AUDIT_FILE, event)
     except Exception as exc:
@@ -1820,8 +1980,9 @@ def stat_label(stat_name):
     return stat_name
 
 
-# ================= BEJELENTKEZÉSI LOGIKA =================
-users_db = load_users()
+# ================= BEJELENTKEZESI LOGIKA =================
+force_remote_refresh = bool(st.session_state.get("_force_remote_refresh", False))
+users_db = load_users(force=force_remote_refresh)
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -1902,10 +2063,12 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ================= SESSION STATE ADATOK =================
-# Minden interakció friss adatbázisból indul. Ez megszünteti a hosszú életű,
-# elavult session-másolatokból eredő felülírások döntő részét.
-st.session_state.db = load_data()
+# A teljes PostgreSQL payload nem toltodik le minden kattintasnal. A session
+# gyorsitotarazott masolatot hasznal, es idoszakosan csak a reviziot ellenorzi.
+# Menteskor az optimista revizioellenorzes tovabbra is megvedi a frissebb adatot.
+st.session_state.db = load_data(force=force_remote_refresh)
 db = st.session_state.db
+st.session_state.pop("_force_remote_refresh", None)
 
 # Ha egy statisztika olyan csoportba tartozik, amely nincs a listában,
 # a csoport automatikusan bekerül, így nem marad "árva" kategória.
@@ -1947,6 +2110,12 @@ st.sidebar.title("📊 SCART")
 st.sidebar.caption(f"v{SCART_VERSION} · heti zárás: csütörtök 14:00")
 if _postgres_enabled():
     st.sidebar.caption("🟢 Tartós adattárolás: Supabase PostgreSQL")
+    if st.sidebar.button("🔄 Adatok frissítése", help="Azonnal újratölti a központi PostgreSQL adatokat."):
+        st.session_state["_force_remote_refresh"] = True
+        st.session_state.pop("_archive_cache", None)
+        st.session_state.pop("_audit_cache", None)
+        st.session_state.pop("_audit_cache_loaded_at", None)
+        st.rerun()
 else:
     st.sidebar.warning("⚠️ Helyi JSON adattárolás – Streamlit Cloudon nem tartós.")
 st.sidebar.subheader("📌 Navigáció")
@@ -2578,23 +2747,46 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         )
                     )
                 else:
+                    # Performance: draw all rising segments in one trace and all
+                    # falling segments in another instead of creating one Plotly
+                    # trace per line segment. All data points remain visible.
+                    green_x, green_y, red_x, red_y = [], [], [], []
                     for i in range(len(raw_items) - 1):
                         x1, y1 = x_numeric[i], y_vals[i]
                         x2, y2 = x_numeric[i + 1], y_vals[i + 1]
 
                         if is_stat_inverted_check:
-                            color = "#00C853" if y2 < y1 else "#FF1744"
+                            is_green = y2 < y1
                         else:
-                            color = "#00C853" if y2 > y1 else "#FF1744"
+                            is_green = y2 > y1
 
+                        target_x = green_x if is_green else red_x
+                        target_y = green_y if is_green else red_y
+                        target_x.extend([x1, x2, None])
+                        target_y.extend([y1, y2, None])
+
+                    if green_x:
                         fig.add_trace(
                             go.Scatter(
-                                x=[x1, x2],
-                                y=[y1, y2],
+                                x=green_x,
+                                y=green_y,
                                 mode="lines",
-                                line=dict(color=color, width=6),
+                                line=dict(color="#00C853", width=6),
                                 showlegend=False,
                                 hoverinfo="skip",
+                                connectgaps=False,
+                            )
+                        )
+                    if red_x:
+                        fig.add_trace(
+                            go.Scatter(
+                                x=red_x,
+                                y=red_y,
+                                mode="lines",
+                                line=dict(color="#FF1744", width=6),
+                                showlegend=False,
+                                hoverinfo="skip",
+                                connectgaps=False,
                             )
                         )
 
@@ -2619,9 +2811,22 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         line_width=4,
                     )
 
+                # Large daily series can contain dozens of DOM annotations.
+                # Keep every point and hover value, but thin only the always-visible
+                # text labels/ticks when the series is large.
+                max_visible_labels = 40
+                if len(x_numeric) <= max_visible_labels:
+                    visible_label_indices = set(range(len(x_numeric)))
+                else:
+                    label_step = max(1, (len(x_numeric) + max_visible_labels - 1) // max_visible_labels)
+                    visible_label_indices = set(range(0, len(x_numeric), label_step))
+                    visible_label_indices.add(len(x_numeric) - 1)
+
                 for idx, (x_val, y_val, txt) in enumerate(
                     zip(x_numeric, y_vals, formatted_texts)
                 ):
+                    if idx not in visible_label_indices:
+                        continue
                     fig.add_annotation(
                         x=x_val,
                         y=y_val,
@@ -2725,6 +2930,12 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                         pass
 
                 xaxis_range = [0, max(unique_x) + 0.5] if len(unique_x) > 1 else [0, 0.5]
+                if len(unique_x) == len(x_numeric):
+                    visible_tickvals = [unique_x[i] for i in sorted(visible_label_indices)]
+                    visible_ticktext = [unique_labels[i] for i in sorted(visible_label_indices)]
+                else:
+                    visible_tickvals = unique_x
+                    visible_ticktext = unique_labels
 
                 layout_args = dict(
                     title=dict(
@@ -2747,8 +2958,8 @@ if selected_menu == "📊 Egyedi Statisztika Nézet":
                     xaxis=dict(
                         title=dict(text="", font=dict(color="#000000", size=1)),
                         tickmode="array",
-                        tickvals=unique_x,
-                        ticktext=unique_labels,
+                        tickvals=visible_tickvals,
+                        ticktext=visible_ticktext,
                         tickangle=-30,
                         showgrid=True,
                         gridcolor="#F1F5F9",
