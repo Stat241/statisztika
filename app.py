@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 from collections import Counter
+from contextlib import closing
 import hashlib
 import hmac
 import io
@@ -26,8 +27,15 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 from filelock import FileLock, Timeout
 
+try:
+    import psycopg2
+    from psycopg2.extras import Json as PgJson
+except ImportError:  # A Streamlit Cloudon a requirements.txt telepíti.
+    psycopg2 = None
+    PgJson = None
+
 SCART_NAME = "SCART"
-SCART_VERSION = "1.0.7"
+SCART_VERSION = "1.0.8"
 APP_TIMEZONE = ZoneInfo("Europe/Budapest")
 
 DAILY_LABEL = "Napi adatok"
@@ -1183,7 +1191,316 @@ def _create_v105_upgrade_safety_snapshot():
                 pass
 
 
+
+# ================= TARTÓS POSTGRESQL / SUPABASE ADATTÁROLÁS =================
+# Ha a Streamlit Secretsben létezik a [postgres] url, a SCART elsődleges
+# adattára a Supabase PostgreSQL. Ilyenkor NINCS csendes visszaesés helyi
+# JSON-mentésre: ha az adatbázis nem elérhető, a rendszer inkább leáll,
+# mintsem két eltérő adatforrást hozzon létre.
+
+def _postgres_url() -> str:
+    try:
+        section = st.secrets.get("postgres", {})
+        if hasattr(section, "get"):
+            return str(section.get("url", "")).strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _postgres_enabled() -> bool:
+    return bool(_postgres_url())
+
+
+def _pg_connect():
+    if not _postgres_enabled():
+        raise DataFileError("A PostgreSQL kapcsolat nincs beállítva a Streamlit Secretsben.")
+    if psycopg2 is None:
+        raise DataFileError(
+            "A PostgreSQL illesztőprogram hiányzik. Add a requirements.txt fájlhoz: psycopg2-binary"
+        )
+    try:
+        return psycopg2.connect(
+            _postgres_url(),
+            connect_timeout=12,
+            sslmode="require",
+            application_name="SCART",
+        )
+    except Exception as exc:
+        raise DataFileError(f"A Supabase/PostgreSQL kapcsolat nem hozható létre: {exc}") from exc
+
+
+def _pg_json(value: Any):
+    if PgJson is None:
+        raise DataFileError("A PostgreSQL JSON illesztőprogram nem érhető el.")
+    return PgJson(value, dumps=lambda obj: json.dumps(obj, ensure_ascii=False, default=str))
+
+
+def _local_seed_payload(store_id: str, default_payload: Any):
+    """Válassza ki a legbiztonságosabb első PostgreSQL kezdőállapotot.
+
+    A v1.0.8 kódba be van ágyazva a 2026-10-15-én kimentett SCART állapot.
+    Ha ugyanakkor még létezik helyi JSON, csak akkor részesítjük előnyben,
+    ha legalább ugyanannyi üzleti adatot tartalmaz. Így egy régi, GitHubban
+    maradt JSON nem tudja felülírni a frissebb beágyazott biztonsági mentést,
+    viszont egy még élő, frissebb Streamlit példány adatai megmenthetők.
+    """
+    default_copy = copy.deepcopy(default_payload)
+    try:
+        if store_id == "database" and DB_FILE.exists():
+            local_payload, _ = load_database(DB_FILE)
+
+            def row_count(db_obj):
+                if not isinstance(db_obj, dict):
+                    return -1
+                total = 0
+                for stat in db_obj.get("stats", {}).values():
+                    if isinstance(stat, dict) and isinstance(stat.get("data"), list):
+                        total += len(stat["data"])
+                return total
+
+            if row_count(local_payload) >= row_count(default_copy):
+                return local_payload
+            return default_copy
+
+        if store_id == "users" and USERS_FILE.exists():
+            local_payload, _, _, _ = load_users_file(USERS_FILE)
+            if isinstance(local_payload, dict) and len(local_payload) >= len(default_copy):
+                return local_payload
+            return default_copy
+
+        if store_id == "archive" and ARCHIVE_FILE.exists():
+            local_payload, _, _ = load_archive_file(ARCHIVE_FILE)
+            return local_payload
+    except Exception:
+        # Sérült helyi fájl esetén a beágyazott, ellenőrzött kezdőállapot marad.
+        pass
+    return default_copy
+
+
+def _pg_load_store(store_id: str, default_payload: Any, *, initialize_empty: bool = False):
+    seed = _local_seed_payload(store_id, default_payload)
+    try:
+        with closing(_pg_connect()) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT payload, revision FROM public.scart_store WHERE id = %s",
+                    (store_id,),
+                )
+                row = cur.fetchone()
+
+                if row is None:
+                    cur.execute(
+                        """
+                        INSERT INTO public.scart_store (id, payload, revision, updated_at)
+                        VALUES (%s, %s, 1, NOW())
+                        RETURNING payload, revision
+                        """,
+                        (store_id, _pg_json(seed)),
+                    )
+                    row = cur.fetchone()
+                elif initialize_empty and int(row[1] or 0) == 0 and (row[0] is None or row[0] == {}):
+                    # A felhasználó által létrehozott üres scart_store sor első inicializálása.
+                    cur.execute(
+                        """
+                        UPDATE public.scart_store
+                        SET payload = %s, revision = 1, updated_at = NOW()
+                        WHERE id = %s AND revision = 0
+                        RETURNING payload, revision
+                        """,
+                        (_pg_json(seed), store_id),
+                    )
+                    updated = cur.fetchone()
+                    if updated is not None:
+                        row = updated
+                    else:
+                        cur.execute(
+                            "SELECT payload, revision FROM public.scart_store WHERE id = %s",
+                            (store_id,),
+                        )
+                        row = cur.fetchone()
+
+            conn.commit()
+    except DataFileError:
+        raise
+    except Exception as exc:
+        raise DataFileError(f"A(z) '{store_id}' PostgreSQL betöltése sikertelen: {exc}") from exc
+
+    payload = copy.deepcopy(row[0]) if row and row[0] is not None else copy.deepcopy(default_payload)
+    revision = int(row[1] or 0) if row else 0
+    return payload, revision
+
+
+def _pg_save_store(
+    store_id: str,
+    payload: Any,
+    *,
+    expected_revision: int | None,
+    reason: str,
+    created_by: str = "",
+) -> int:
+    """Tranzakciós mentés optimista revízió-ellenőrzéssel és visszaállítási ponttal."""
+    try:
+        conn = _pg_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT payload, revision FROM public.scart_store WHERE id = %s FOR UPDATE",
+                    (store_id,),
+                )
+                row = cur.fetchone()
+                current_payload = copy.deepcopy(row[0]) if row and row[0] is not None else {}
+                actual_revision = int(row[1] or 0) if row else 0
+
+                if expected_revision is not None and actual_revision != int(expected_revision):
+                    raise ConcurrentUpdateError(
+                        "Az adatokat közben egy másik munkamenet módosította. "
+                        "A SCART nem írta felül a frissebb változatot."
+                    )
+
+                if row is not None:
+                    cur.execute(
+                        """
+                        INSERT INTO public.scart_snapshots
+                            (store_id, payload, revision, reason, created_by, created_at)
+                        VALUES (%s, %s, %s, %s, %s, NOW())
+                        """,
+                        (
+                            store_id,
+                            _pg_json(current_payload),
+                            actual_revision,
+                            reason,
+                            created_by or None,
+                        ),
+                    )
+                    new_revision = actual_revision + 1
+                    payload_to_store = copy.deepcopy(payload)
+                    if store_id == "database" and isinstance(payload_to_store, dict):
+                        payload_to_store.setdefault("_meta", {})["revision"] = new_revision
+                    cur.execute(
+                        """
+                        UPDATE public.scart_store
+                        SET payload = %s, revision = %s, updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (_pg_json(payload_to_store), new_revision, store_id),
+                    )
+                else:
+                    new_revision = 1
+                    payload_to_store = copy.deepcopy(payload)
+                    if store_id == "database" and isinstance(payload_to_store, dict):
+                        payload_to_store.setdefault("_meta", {})["revision"] = new_revision
+                    cur.execute(
+                        """
+                        INSERT INTO public.scart_store (id, payload, revision, updated_at)
+                        VALUES (%s, %s, %s, NOW())
+                        """,
+                        (store_id, _pg_json(payload_to_store), new_revision),
+                    )
+            conn.commit()
+            return new_revision
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    except ConcurrentUpdateError:
+        raise
+    except DataFileError:
+        raise
+    except Exception as exc:
+        raise DataFileError(f"A(z) '{store_id}' PostgreSQL mentése sikertelen: {exc}") from exc
+
+
+def _pg_append_audit_event(event: dict) -> None:
+    db_details = {
+        "role": event.get("role", ""),
+        "summary": event.get("summary", ""),
+        "details": copy.deepcopy(event.get("details", {})),
+        "legacy_event_id": event.get("id", ""),
+        "client_timestamp": event.get("timestamp", ""),
+    }
+    try:
+        with closing(_pg_connect()) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO public.scart_activity_log
+                        (username, action, target, details, created_at)
+                    VALUES (%s, %s, %s, %s, NOW())
+                    """,
+                    (
+                        event.get("user") or None,
+                        event.get("action") or "Ismeretlen művelet",
+                        event.get("stat") or None,
+                        _pg_json(db_details),
+                    ),
+                )
+            conn.commit()
+    except DataFileError:
+        raise
+    except Exception as exc:
+        raise DataFileError(f"A PostgreSQL tevékenységi napló írása sikertelen: {exc}") from exc
+
+
+def _pg_load_audit() -> list[dict]:
+    try:
+        with closing(_pg_connect()) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, username, action, target, details, created_at
+                    FROM public.scart_activity_log
+                    ORDER BY created_at ASC, id ASC
+                    """
+                )
+                rows = cur.fetchall()
+    except DataFileError:
+        raise
+    except Exception as exc:
+        raise DataFileError(f"A PostgreSQL tevékenységi napló betöltése sikertelen: {exc}") from exc
+
+    result = []
+    for row_id, username, action, target, details, created_at in rows:
+        details = details if isinstance(details, dict) else {}
+        ts = created_at
+        try:
+            if getattr(ts, "tzinfo", None) is not None:
+                ts = ts.astimezone(APP_TIMEZONE)
+            timestamp = ts.isoformat(timespec="seconds")
+        except Exception:
+            timestamp = str(created_at)
+        result.append(
+            {
+                "id": str(row_id),
+                "timestamp": timestamp,
+                "user": username or "(ismeretlen)",
+                "role": str(details.get("role", "")),
+                "action": action or "",
+                "stat": target or "",
+                "summary": str(details.get("summary", "")),
+                "details": copy.deepcopy(details.get("details", {})),
+            }
+        )
+    return result
+
+
+def _pg_healthcheck() -> tuple[bool, str]:
+    if not _postgres_enabled():
+        return False, "Nincs PostgreSQL Secret beállítva"
+    try:
+        with closing(_pg_connect()) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        return True, "Supabase PostgreSQL kapcsolat rendben"
+    except Exception as exc:
+        return False, str(exc)
+
+
 def _bootstrap_local_data_files():
+    if _postgres_enabled():
+        return
     if not USERS_FILE.exists():
         atomic_json_dump(USERS_FILE, INITIAL_USERS, create_backup=False)
     if not DB_FILE.exists():
@@ -1202,6 +1519,27 @@ def _record_recovery(message):
 
 
 def load_users():
+    if _postgres_enabled():
+        try:
+            users_raw, revision = _pg_load_store(
+                "users", INITIAL_USERS, initialize_empty=True
+            )
+            users, migrated = normalize_users(users_raw)
+            st.session_state["_users_revision"] = revision
+            if migrated:
+                revision = _pg_save_store(
+                    "users",
+                    users,
+                    expected_revision=revision,
+                    reason="Felhasználói jelszóformátum automatikus migrációja",
+                    created_by="system",
+                )
+                st.session_state["_users_revision"] = revision
+            return users
+        except DataFileError as exc:
+            st.error(f"A SCART nem tud kapcsolódni a tartós felhasználói adatbázishoz: {exc}")
+            st.stop()
+
     try:
         users, migrated, recovery, digest = load_users_file(USERS_FILE)
         _record_recovery(recovery)
@@ -1217,6 +1555,26 @@ def load_users():
 
 
 def save_users(users_dict):
+    if _postgres_enabled():
+        try:
+            new_revision = _pg_save_store(
+                "users",
+                users_dict,
+                expected_revision=st.session_state.get("_users_revision"),
+                reason="Felhasználók/jogosultságok módosítása",
+                created_by=st.session_state.get("username", ""),
+            )
+            st.session_state["_users_revision"] = new_revision
+            return
+        except ConcurrentUpdateError as exc:
+            st.session_state["_scart_flash_warning"] = (
+                f"⚠️ {exc} A frissebb felhasználói adatokat újratöltöm; ismételd meg a módosítást."
+            )
+            st.rerun()
+        except DataFileError as exc:
+            st.error(f"A felhasználói adatok tartós mentése sikertelen: {exc}")
+            st.stop()
+
     try:
         st.session_state["_users_digest"] = save_users_file(
             USERS_FILE,
@@ -1252,6 +1610,20 @@ def fmt_num(val, unit=""):
 
 
 def load_data():
+    if _postgres_enabled():
+        try:
+            loaded_raw, revision = _pg_load_store(
+                "database", INITIAL_DATABASE, initialize_empty=True
+            )
+            loaded = normalize_database(loaded_raw)
+            loaded.setdefault("_meta", {})["revision"] = revision
+            st.session_state["_db_revision"] = revision
+            return loaded
+        except DataFileError as exc:
+            st.error(f"A SCART tartós PostgreSQL adatbázisa nem tölthető be: {exc}")
+            st.info("Biztonsági okból a rendszer nem vált vissza ideiglenes helyi mentésre.")
+            st.stop()
+
     try:
         loaded, recovery = load_database(DB_FILE)
         _record_recovery(recovery)
@@ -1263,6 +1635,43 @@ def load_data():
 
 
 def save_data(db):
+    if _postgres_enabled():
+        try:
+            payload = normalize_database(copy.deepcopy(db))
+            expected_revision = st.session_state.get(
+                "_db_revision", payload.get("_meta", {}).get("revision", 0)
+            )
+            # A belső meta revíziót a PostgreSQL revízióval tartjuk szinkronban.
+            payload.setdefault("_meta", {})["revision"] = int(expected_revision or 0)
+            new_revision = _pg_save_store(
+                "database",
+                payload,
+                expected_revision=int(expected_revision or 0),
+                reason="SCART statisztikai adatbázis módosítása",
+                created_by=st.session_state.get("username", ""),
+            )
+            payload["_meta"]["revision"] = new_revision
+            st.session_state["_db_revision"] = new_revision
+            db.clear()
+            db.update(payload)
+            st.session_state.db = db
+            return True
+        except ConcurrentUpdateError as exc:
+            fresh_raw, revision = _pg_load_store(
+                "database", INITIAL_DATABASE, initialize_empty=True
+            )
+            fresh = normalize_database(fresh_raw)
+            fresh.setdefault("_meta", {})["revision"] = revision
+            st.session_state["_db_revision"] = revision
+            st.session_state.db = fresh
+            st.session_state["_scart_flash_warning"] = (
+                f"⚠️ {exc} A frissebb adatokat újratöltöttem; kérlek, ismételd meg az előző mentést."
+            )
+            st.rerun()
+        except DataFileError as exc:
+            st.error(f"A SCART tartós mentése sikertelen: {exc}")
+            st.stop()
+
     try:
         saved = save_database(DB_FILE, db)
         db.clear()
@@ -1283,6 +1692,19 @@ def save_data(db):
 
 
 def load_archive():
+    if _postgres_enabled():
+        try:
+            archive, revision = _pg_load_store(
+                "archive", INITIAL_ARCHIVE, initialize_empty=False
+            )
+            if not isinstance(archive, dict):
+                raise DataFileError("A PostgreSQL archívum formátuma hibás.")
+            st.session_state["_archive_revision"] = revision
+            return archive
+        except DataFileError as exc:
+            st.error(f"Az archívum tartós adatbázisból nem tölthető be: {exc}")
+            st.stop()
+
     try:
         archive, recovery, digest = load_archive_file(ARCHIVE_FILE)
         _record_recovery(recovery)
@@ -1294,6 +1716,26 @@ def load_archive():
 
 
 def save_archive(archive_data):
+    if _postgres_enabled():
+        try:
+            new_revision = _pg_save_store(
+                "archive",
+                archive_data,
+                expected_revision=st.session_state.get("_archive_revision", 0),
+                reason="SCART archívum módosítása",
+                created_by=st.session_state.get("username", ""),
+            )
+            st.session_state["_archive_revision"] = new_revision
+            return
+        except ConcurrentUpdateError as exc:
+            st.session_state["_scart_flash_warning"] = (
+                f"⚠️ {exc} A frissebb archívumot újratöltöm; ismételd meg a műveletet."
+            )
+            st.rerun()
+        except DataFileError as exc:
+            st.error(f"Az archívum tartós mentése sikertelen: {exc}")
+            st.stop()
+
     try:
         st.session_state["_archive_digest"] = save_archive_file(
             ARCHIVE_FILE,
@@ -1312,6 +1754,13 @@ def save_archive(archive_data):
 
 # Segédfüggvény a statisztika nevének és egységének megjelenítéséhez
 def load_audit():
+    if _postgres_enabled():
+        try:
+            return _pg_load_audit()
+        except DataFileError as exc:
+            st.error(f"A tevékenységi napló nem tölthető be a tartós adatbázisból: {exc}")
+            st.stop()
+
     try:
         audit_rows, recovery = load_audit_file(AUDIT_FILE)
         _record_recovery(recovery)
@@ -1344,7 +1793,10 @@ def append_audit_event(
         "details": copy.deepcopy(details) if details is not None else {},
     }
     try:
-        append_audit_file(AUDIT_FILE, event)
+        if _postgres_enabled():
+            _pg_append_audit_event(event)
+        else:
+            append_audit_file(AUDIT_FILE, event)
     except Exception as exc:
         # Az üzleti adat mentése ettől még sikeres marad, de az admin figyelmeztetést kap.
         st.session_state["_scart_audit_warning"] = (
@@ -1493,6 +1945,10 @@ else:
 # ================= NAVIGÁCIÓ =================
 st.sidebar.title("📊 SCART")
 st.sidebar.caption(f"v{SCART_VERSION} · heti zárás: csütörtök 14:00")
+if _postgres_enabled():
+    st.sidebar.caption("🟢 Tartós adattárolás: Supabase PostgreSQL")
+else:
+    st.sidebar.warning("⚠️ Helyi JSON adattárolás – Streamlit Cloudon nem tartós.")
 st.sidebar.subheader("📌 Navigáció")
 role_label = (
     "👑 Adminisztrátor"
@@ -3646,8 +4102,8 @@ elif selected_menu == "💾 Biztonsági mentés":
     st.title(f"💾 {SCART_NAME} – Biztonsági mentés")
     st.info(
         "Itt bármikor lementheted a SCART aktuális állapotát. A letöltés nem módosít "
-        "és nem töröl semmilyen adatot. Streamlit Community Cloud használatakor érdemes "
-        "minden nagyobb adatbevitel vagy programfrissítés előtt teljes mentést készíteni."
+        "és nem töröl semmilyen adatot. A Supabase PostgreSQL az elsődleges tartós adattár; "
+        "a letölthető ZIP ettől független, kézi biztonsági másolatot ad."
     )
 
     backup_stamp = budapest_now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -3690,6 +4146,8 @@ elif selected_menu == "💾 Biztonsági mentés":
         "users": len(backup_users),
         "archived_statistics": len(backup_archive),
         "audit_entries": len(backup_audit),
+        "storage": "supabase_postgresql" if _postgres_enabled() else "local_json",
+        "database_revision": st.session_state.get("_db_revision", backup_db.get("_meta", {}).get("revision", 0)),
     }
 
     zip_buffer = io.BytesIO()
