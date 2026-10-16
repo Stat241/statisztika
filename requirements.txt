@@ -3,3 +3,4 @@ pandas
 plotly
 filelock
 openpyxl
+psycopg2-binary
